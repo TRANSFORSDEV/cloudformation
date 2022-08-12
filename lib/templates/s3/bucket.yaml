@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  EnvironmentStack:
+    Description: "Required the name of the environment Stack"
+    Type: String
+  KmsStack:
+    Description: "Optional"
+    Type: String
+    Default: ''
+  Action:
+    Type: String
+    AllowedValues:
+      - IMPORT
+      - CREATE
+    Default: "CREATE"
+  AccountId:
+    Description: "[IMPORT] Optional"
+    Type: String
+    Default: ''
+  BucketName:
+    Description: "Optional"
+    Type: String
+    Default: ''
+  AccessControl:
+    Description: "[CREATE] Optional"
+    Type: String
+    Default: Private
+    AllowedValues: [Private, PublicRead, PublicReadWrite, AuthenticatedRead, LogDeliveryWrite, BucketOwnerRead, BucketOwnerFullControl, AwsExecRead]
+  BlockPublicAcls:
+    Description: "[CREATE] Optional - Specifies whether Amazon S3 should block public access control lists (ACLs) for this bucket and objects in this bucket"
+    Type: String
+    AllowedValues: [ENABLED, DISABLED]
+    Default: ENABLED
+  BlockPublicPolicy:
+    Description: "[CREATE] Optional - Specifies whether Amazon S3 should block public bucket policies for this bucket"
+    Type: String
+    AllowedValues: [ENABLED, DISABLED]
+    Default: ENABLED
+  IgnorePublicAcls:
+    Description: "[CREATE] Optional - Specifies whether Amazon S3 should ignore public ACLs for this bucket and objects in this bucket"
+    Type: String
+    AllowedValues: [ENABLED, DISABLED]
+    Default: ENABLED
+  RestrictPublicBuckets:
+    Description: "[CREATE] Optional - Specifies whether Amazon S3 should restrict public bucket policies for this bucket."
+    Type: String
+    AllowedValues: [ENABLED, DISABLED]
+    Default: ENABLED
+  StaticWebHosting:
+    Description: "[CREATE] Optional"
+    Type: String
+    AllowedValues: [ENABLED, DISABLED]
+    Default: DISABLED
+  IndexDocument:
+    Description: "[CREATE] Optional"
+    Type: String
+    Default: ''
+Conditions:
+  IsImport: !Equals [ !Ref Action, IMPORT ]
+  IsCreate: !Equals [ !Ref Action, CREATE ]
+  OnThisAccount: !Equals [ !Ref AccountId, '' ]
+  EnableEncryption: !Not [ !Equals [ !Ref KmsStack, '' ] ]
+  HasStaticWebHosting: !Equals [ !Ref StaticWebHosting, ENABLED ]
+  HasBlockPublicAcls: !Equals [ !Ref BlockPublicAcls, ENABLED ]
+  HasBlockPublicPolicy: !Equals [ !Ref BlockPublicPolicy, ENABLED ]
+  HasIgnorePublicAcls: !Equals [ !Ref IgnorePublicAcls, ENABLED ]
+  HasRestrictPublicBuckets: !Equals [ !Ref RestrictPublicBuckets, ENABLED ]
+Resources:
+  Bucket:
+    Condition: IsCreate
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub
+        - '${PREFIX}-${StackNumber}-${BucketName}'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceNameLower'
+      AccessControl: !Ref AccessControl
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: !If [HasBlockPublicAcls, true, false]
+        BlockPublicPolicy: !If [HasBlockPublicPolicy, true, false]
+        IgnorePublicAcls: !If [HasIgnorePublicAcls, true, false]
+        RestrictPublicBuckets: !If [HasRestrictPublicBuckets, true, false]
+      BucketEncryption: !If
+        - EnableEncryption
+        - ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                KMSMasterKeyID:
+                  'Fn::ImportValue': !Sub '${KmsStack}-KeyId'
+                SSEAlgorithm: aws:kms
+        - !Ref AWS::NoValue
+      WebsiteConfiguration: !If
+        - HasStaticWebHosting
+        - IndexDocument: !Ref IndexDocument
+        - !Ref AWS::NoValue
+Outputs:
+  TemplateID:
+    Description: 'applying.pe template id.'
+    Value: 'S3/Bucket'
+  TemplateVersion:
+    Description: 'applying.pe template version.'
+    Value: '1.1.0'
+  StackName:
+    Description: 'Stack name.'
+    Value: !Sub '${AWS::StackName}'
+  AccountId:
+    Value: !If [OnThisAccount, !Ref "AWS::AccountId", !Ref AccountId]
+    Export:
+      Name: !Sub '${AWS::StackName}-AccountId'
+  BucketName:
+    Value: !If [IsCreate, !Ref Bucket, !Ref BucketName]
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketName'
+  BucketArn:
+    Value: !If [IsCreate, !GetAtt Bucket.Arn, !Sub "arn:aws:s3:::${BucketName}"]
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketArn'
+  DomainName:
+    Value: !If [IsCreate, !GetAtt Bucket.DomainName, 'NO_VALUE']
+    Export:
+      Name: !Sub '${AWS::StackName}-DomainName'
+  DualStackDomainName:
+    Value: !If [IsCreate, !GetAtt Bucket.DualStackDomainName, 'NO_VALUE']
+    Export:
+      Name: !Sub '${AWS::StackName}-DualStackDomainName'
+  RegionalDomainName:
+    Value: !If [IsCreate, !GetAtt Bucket.RegionalDomainName, 'NO_VALUE']
+    Export:
+      Name: !Sub '${AWS::StackName}-RegionalDomainName'
+  WebsiteURL:
+    Value: !If [IsCreate, !GetAtt Bucket.WebsiteURL, 'NO_VALUE']
+    Export:
+      Name: !Sub '${AWS::StackName}-WebsiteURL'
+  WebsiteURLwithnohttp:
+    Value: !If [IsCreate, !Select [1, !Split ["//", !GetAtt Bucket.WebsiteURL]], 'NO_VALUE']
+    Export:
+      Name: !Sub '${AWS::StackName}-WebsiteURLwithnohttp'
+      

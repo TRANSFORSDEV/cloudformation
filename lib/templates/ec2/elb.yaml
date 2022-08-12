@@ -1,0 +1,1550 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  EnvironmentStack:
+    Description: "Required the name of the environment Stack"
+    Type: String
+  MasterVPCStack:
+    Description: "Required the name of the environment Stack"
+    Type: String
+  BalancerName:
+    Type: String
+  Schema:
+    Type: String
+    AllowedValues: [internal, internet-facing]
+    Default: internet-facing
+  Type:
+    Type: String
+    AllowedValues: [application, gateway, network]
+    Default: application
+  Subnets:
+    Type: CommaDelimitedList
+  HTTP:
+    Description: HTTP/TCP
+    Type: String
+    AllowedValues: [ ENABLED, DISABLED ]
+    Default: DISABLED
+  HTTPPort:
+    Type: String
+    Default: 80
+  HTTPS:
+    Description: HTTPS/TLS
+    Type: String
+    AllowedValues: [ ENABLED, DISABLED ]
+    Default: DISABLED
+  HTTPSPort:
+    Type: String
+    Default: 443
+  HTTPSCertificateArn:
+    Type: String
+    Default: 'arn:aws:acm:us-east-1:851006405034:certificate/8867239e-e49e-4a4d-bb28-3bd549c6a1e7'
+  DomainName:
+    Type: String
+    Default: ''
+  HostedZoneId:
+    Type: String
+    Default: ''
+Conditions:
+  IsApplication: !Equals [!Ref Type, application ]
+  HTTPEnabled: !Equals [!Ref HTTP, ENABLED ]
+  HTTPSEnabled: !Equals [!Ref HTTPS, ENABLED ]
+  HasHostedZoneId: !Not [ !Equals [ !Ref HostedZoneId, '' ] ]
+  HasDomainName: !Not [ !Equals [ !Ref DomainName, '' ] ]
+  CreateRecordSet: !And [!Condition HasHostedZoneId, !Condition HasDomainName]
+Resources:
+  SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: 
+        Fn::Sub:
+        - '${PREFIX}-ALB-${StackNumber}-SG'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      GroupDescription: "Traffic To Load Balancer"
+      VpcId: !ImportValue
+        'Fn::Sub': '${MasterVPCStack}-VPC'
+  SecurityGroupHttpIngressIPv4:
+    Condition: HTTPEnabled
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: 
+        Ref: SecurityGroup
+      IpProtocol: tcp
+      FromPort: 
+        Ref: HTTPPort #'80'
+      ToPort: 
+        Ref: HTTPPort
+      CidrIp: 0.0.0.0/0
+  SecurityGroupHttpsIngressIPv4:
+    Condition: HTTPSEnabled
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: 
+        Ref: SecurityGroup
+      IpProtocol: tcp
+      FromPort: 
+        Ref: HTTPSPort #'443'
+      ToPort: 
+        Ref: HTTPSPort
+      CidrIp: 0.0.0.0/0
+  LoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-ELB-${StackNumber}-${BalancerName}'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Scheme: 
+        Ref: Schema
+      Type: 
+        Ref: Type
+      SecurityGroups: 
+        - !If [IsApplication, !Ref SecurityGroup, !Ref AWS::NoValue]
+      Subnets:
+        Ref: Subnets
+  TargetGroup1601:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1601'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1601
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1601
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1602:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1602'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1602
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1602
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1603:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1603'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1603
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1603
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1604:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1604'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1604
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1604
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1605:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1605'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1605
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1605
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1606:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1606'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1606
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1606
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1607:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1607'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1607
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1607
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1608:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1608'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1608
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1608
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1609:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1609'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1609
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1609
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1610:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1610'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1610
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1610
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1611:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1611'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1611
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1611
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1612:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1612'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1612
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1612
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1613:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1613'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1613
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1613
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1614:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1614'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1614
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1614
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1615:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1615'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1615
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1615
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1616:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1616'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1616
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1616
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1617:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1617'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1617
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1617
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1618:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1618'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1618
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1618
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1619:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1619'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1619
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1619
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1620:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1620'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1620
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1620
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1621:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1621'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1621
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1621
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1622:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1622'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1622
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1622
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1623:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1623'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1623
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1623
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup1624:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-1624'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 1624
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 1624
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup2602:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-2602'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 2602
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 2602
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup2604:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-2604'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 2604
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 2604
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup2606:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-2606'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 2606
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 2606
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup2608:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-2608'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 2608
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 2608
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup2610:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-2610'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 2610
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 2610
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup2612:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-2612'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 2612
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 2612
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup2614:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-2614'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 2614
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 2614
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup2616:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-2616'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 2616
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 2616
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup2618:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-2618'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 2618
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 2618
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup2620:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-2620'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 2620
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 2620
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup2622:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-2622'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 2622
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 2622
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  TargetGroup2624:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: 
+        Fn::Sub:
+        - '${PREFIX}-TG-${StackNumber}-2624'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Port: 2624
+      Protocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: !If [IsApplication, HTTP, TCP]
+      HealthCheckPath: !If [IsApplication, '/', !Ref AWS::NoValue]
+      TargetType: ip
+      Targets:
+        - Id: 10.60.2.176
+          Port: 2624
+      VpcId:
+        'Fn::ImportValue': 
+          Fn::Sub: '${MasterVPCStack}-VPC'
+  # HTTPListener:
+  #   Condition: HTTPEnabled
+  #   Type: 'AWS::ElasticLoadBalancingV2::Listener'
+  #   Properties:
+  #     LoadBalancerArn: 
+  #       Ref: LoadBalancer
+  #     DefaultActions:
+  #       - Type: forward
+  #         TargetGroupArn: 
+  #           Ref: TargetGroup
+  #     Port: 
+  #       Ref: HTTPPort
+  #     Protocol: !If [IsApplication, HTTP, TCP]
+  HTTPSListener1601:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1601
+      Port: 1601
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1602:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1602
+      Port: 1602
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1603:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1603
+      Port: 1603
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1604:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1604
+      Port: 1604
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1605:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1605
+      Port: 1605
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1606:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1606
+      Port: 1606
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1607:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1607
+      Port: 1607
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1608:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1608
+      Port: 1608
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1609:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1609
+      Port: 1609
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1610:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1610
+      Port: 1610
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1611:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1611
+      Port: 1611
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1612:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1612
+      Port: 1612
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1613:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1613
+      Port: 1613
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1614:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1614
+      Port: 1614
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1615:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1615
+      Port: 1615
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1616:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1616
+      Port: 1616
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1617:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1617
+      Port: 1617
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1618:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1618
+      Port: 1618
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1619:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1619
+      Port: 1619
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1620:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1620
+      Port: 1620
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1621:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1621
+      Port: 1621
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1622:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1622
+      Port: 1622
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1623:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1623
+      Port: 1623
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener1624:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup1624
+      Port: 1624
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener2602:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup2602
+      Port: 2602
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener2604:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup2604
+      Port: 2604
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener2606:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup2606
+      Port: 2606
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener2608:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup2608
+      Port: 2608
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener2610:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup2610
+      Port: 2610
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener2612:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup2612
+      Port: 2612
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener2614:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup2614
+      Port: 2614
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener2616:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup2616
+      Port: 2616
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener2618:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup2618
+      Port: 2618
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener2620:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup2620
+      Port: 2620
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener2622:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup2622
+      Port: 2622
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  HTTPSListener2624:
+    Condition: HTTPSEnabled
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      # AlpnPolicy:
+      #   - HTTP2Preferred
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8
+      LoadBalancerArn: 
+        Ref: LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroup2624
+      Port: 2624
+      Protocol: !If [IsApplication, HTTPS, TLS]
+      SslPolicy: ELBSecurityPolicy-2016-08
+  # RecordSetPublic:
+  #   Type: 'AWS::Route53::RecordSet'
+  #   Condition: CreateRecordSet
+  #   Properties:
+  #     AliasTarget:
+  #       HostedZoneId: 
+  #         Fn::GetAtt:
+  #         - LoadBalancer
+  #         - CanonicalHostedZoneID
+  #       DNSName: 
+  #         Fn::GetAtt:
+  #         - LoadBalancer
+  #         - DNSName
+  #     HostedZoneId: 
+  #       Ref: HostedZoneId
+  #     Name: 
+  #       Ref: DomainName
+  #     Type: A
+Outputs:
+  TemplateID:
+    Description: 'applying.pe template id.'
+    Value: 'S3/Bucket'
+  TemplateVersion:
+    Description: 'applying.pe template version.'
+    Value: '1.1.0'
+  StackName:
+    Description: 'Stack name.'
+    Value: 
+      Fn::Sub: '${AWS::StackName}'
+  SecurityGroup:
+    Condition: IsApplication
+    Value: 
+      Ref: SecurityGroup
+    Export:
+      Name: 
+        Fn::Sub: '${AWS::StackName}-SecurityGroup'
+  LoadBalancerArn:
+    Value: 
+      Ref: LoadBalancer
+    Export:
+      Name: 
+        Fn::Sub: '${AWS::StackName}-LoadBalancerArn'
+  LoadBalancerName:
+    Value: 
+      Fn::GetAtt: LoadBalancer.LoadBalancerName
+    Export:
+      Name: 
+        Fn::Sub: '${AWS::StackName}-LoadBalancerName'
+  LoadBalancerFullName:
+    Value: 
+      Fn::GetAtt: LoadBalancer.LoadBalancerFullName
+    Export:
+      Name: 
+        Fn::Sub: '${AWS::StackName}-LoadBalancerFullName'
+  LoadBalancerCanonicalHostedZoneID:
+    Value: 
+      Fn::GetAtt: LoadBalancer.CanonicalHostedZoneID
+    Export:
+      Name: 
+        Fn::Sub: '${AWS::StackName}-LoadBalancerCanonicalHostedZoneID'
+  LoadBalancerDNSName:
+    Value: 
+      Fn::GetAtt: LoadBalancer.DNSName
+    Export:
+      Name: 
+        Fn::Sub: '${AWS::StackName}-LoadBalancerDNSName'
+  # PrincipalListenerArn:
+  #   Value:
+  #     Ref: HTTPListener
+  #   # Value: !If
+  #   #   - HTTPSEnabled
+  #   #   - !Ref HTTPSListener
+  #   #   - !Ref HTTPListener
+  #   Export:
+  #     Name: 
+  #       Fn::Sub: '${AWS::StackName}-PrincipalListenerArn'
+  # TargetGroupArn:
+  #   Value: 
+  #     Ref: TargetGroup
+  #   Export:
+  #     Name: 
+  #       Fn::Sub: '${AWS::StackName}-TargetGroupArn'
+  # TargetGroupName:
+  #   Value: 
+  #     Fn::GetAtt: TargetGroup.TargetGroupName
+  #   Export:
+  #     Name: 
+  #       Fn::Sub: '${AWS::StackName}-TargetGroupName'
+  # TargetGroupFullName:
+  #   Value: 
+  #     Fn::GetAtt: TargetGroup.TargetGroupFullName
+  #   Export:
+  #     Name: 
+  #       Fn::Sub: '${AWS::StackName}-TargetGroupFullName'
+
+
+

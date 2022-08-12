@@ -1,0 +1,164 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  EnvironmentStack:
+    Description: "Required the name of the environment Stack"
+    Type: String
+  S3BucketOriginStack:
+    Description: "Optional"
+    Type: String
+    Default: ''
+  DefaultRootObject:
+    Description: "Optional"
+    Type: String
+    Default: 'index.html'
+  Enabled:
+    Type: String
+    AllowedValues: [ENABLED, DISABLED]
+    Default: ENABLED
+  LoggingEnabled:
+    Type: String
+    AllowedValues: [ENABLED, DISABLED]
+    Default: DISABLED
+  S3BucketLoggingStack:
+    Description: "Optional"
+    Type: String
+    Default: ''
+  S3BucketLoggingPrefix:
+    Type: String
+    Default: ''
+  Domain:
+    Description: "Optional Custom Domain"
+    Type: String
+    Default: ''
+  HostedZoneId:
+    Description: "Optional Hosted Zone Custom Domain"
+    Type: String
+    Default: ''
+  CertificateArn:
+    Description: "Optional Certificate Custom Domain"
+    Type: String
+    Default: ''
+Conditions:
+  HasDefaultRootObject: !Not [!Equals [ !Ref DefaultRootObject, '' ]]
+  HasS3BucketLoggingStack: !Not [!Equals [ !Ref S3BucketLoggingStack, '' ]]
+  HasDomain: !Not [!Equals [ !Ref Domain, '' ]]
+  HasHostedZoneId: !Not [!Equals [ !Ref HostedZoneId, '' ]]
+  HasCertificateArn: !Not [!Equals [ !Ref CertificateArn, '' ]]
+  WithCustomDomain: !And [!Condition HasDomain, !Condition HasHostedZoneId, !Condition HasCertificateArn]
+  IsEnabled: !Equals [ !Ref Enabled, ENABLED ]
+  IsLoggingEnabled: !Equals [ !Ref LoggingEnabled, ENABLED ]
+  ConfigureLogging: !And [!Condition IsLoggingEnabled, !Condition HasS3BucketLoggingStack]
+Resources:
+  CloudFrontIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: Cloudfront origin access identity for s3 origin
+  Distribution:
+    Type: "AWS::CloudFront::Distribution"
+    Properties:
+      DistributionConfig:
+        Aliases: !If [WithCustomDomain, [!Ref Domain], !Ref "AWS::NoValue"]
+        Origins:
+          - Id: !Sub
+              - "S3-origin-${BUCKET_NAME}"
+              - BUCKET_NAME: !ImportValue
+                  'Fn::Sub': '${S3BucketOriginStack}-BucketName'
+            DomainName: !ImportValue
+              'Fn::Sub': '${S3BucketOriginStack}-WebsiteURLwithnohttp'
+            #DomainName: !ImportValue
+              #'Fn::Sub': '${S3BucketOriginStack}-RegionalDomainName'
+            ConnectionAttempts: 3
+            ConnectionTimeout: 10
+            OriginShield:
+              Enabled: true
+              OriginShieldRegion: !Ref AWS::Region
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginKeepaliveTimeout: 5
+              OriginProtocolPolicy: http-only
+              OriginReadTimeout: 30
+              OriginSSLProtocols: 
+                - TLSv1 
+            #S3OriginConfig:
+              #OriginAccessIdentity: !Sub
+                #- "origin-access-identity/cloudfront/${CLOUDFRONT_IDENTITY}"
+                #- CLOUDFRONT_IDENTITY: !Ref CloudFrontIdentity
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          CachePolicyId: '658327ea-f89d-4fab-a63d-7e88639e58f6'
+          Compress: true
+          OriginRequestPolicyId: !Ref OriginRequestPolicy #'88a5eaf4-2fd4-4709-b370-b4c650ea3fcf'
+          TargetOriginId: !Sub
+            - "S3-origin-${BUCKET_NAME}"
+            - BUCKET_NAME: !ImportValue
+                'Fn::Sub': '${S3BucketOriginStack}-BucketName'
+          ViewerProtocolPolicy: redirect-to-https
+        DefaultRootObject: !If [HasDefaultRootObject, !Ref DefaultRootObject, !Ref "AWS::NoValue"]
+        Enabled: !If [IsEnabled, true, false]
+        HttpVersion: http2
+        Logging: !If
+          - ConfigureLogging
+          - Bucket: !ImportValue
+              'Fn::Sub': '${S3BucketLoggingStack}-BucketName'
+            IncludeCookies: true
+            Prefix: !Ref S3BucketLoggingPrefix
+          - !Ref AWS::NoValue
+        PriceClass: PriceClass_100
+        ViewerCertificate: !If
+          - WithCustomDomain
+          - AcmCertificateArn: !Ref CertificateArn
+            MinimumProtocolVersion: TLSv1.2_2018 # recommended value if there is no browser support issue
+            SslSupportMethod: sni-only
+          - !Ref AWS::NoValue
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ErrorCachingMinTTL: 5
+            ResponseCode: 200
+            ResponsePagePath: '/index.html'
+  RecordSet:
+    Condition: WithCustomDomain
+    Type: AWS::Route53::RecordSet
+    Properties:
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2
+        DNSName: !GetAtt Distribution.DomainName
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref Domain
+      Type: A
+  OriginRequestPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        CookiesConfig:
+          CookieBehavior: none
+        HeadersConfig:
+          HeaderBehavior: none
+        Name: 'raf-web-s3-policy'
+        QueryStringsConfig:
+          QueryStringBehavior:
+            all
+Outputs:
+  TemplateID:
+    Description: 'applying.pe template id.'
+    Value: 'S3/Bucket'
+  TemplateVersion:
+    Description: 'applying.pe template version.'
+    Value: '1.1.0'
+  StackName:
+    Description: 'Stack name.'
+    Value: !Sub '${AWS::StackName}'
+  CloudFrontIdentity:
+    Value: !Ref CloudFrontIdentity
+    Export:
+      Name: !Sub '${AWS::StackName}-CloudFrontIdentity'

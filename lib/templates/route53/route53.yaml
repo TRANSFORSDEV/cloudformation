@@ -1,0 +1,100 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'VPC: private DNS zone'
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Stack Dependencies
+      Parameters:
+      - EnvironmentStack
+    - Label:
+        default: Zone Parameters
+      Parameters:
+      - HostedZoneId
+      - HostedZoneName
+Parameters:
+  EnvironmentStack:
+    Description: Stack name of base stack.
+    Type: String
+  HostedZoneName:
+    Description: Hosted Zone Name.
+    Type: String
+    Default: ''
+  HostedZoneId:
+    Description: (Optional) Hosted Zone Id, empty to create a new Hosted Zone
+    Type: String
+    Default: ''
+  EnableLogging:
+    Description: Enable Route53 Logging
+    Type: String
+    Default: 'NO'
+    AllowedValues:
+    - 'NO'
+    - 'YES'
+  LogRetentionDays:
+    Type: Number
+    Default: 30
+Conditions:
+  CreateHoztedZone:
+    Fn::Equals:
+    - Ref: HostedZoneId
+    - ''
+  LoggingIsEnabled:
+    Fn::Equals:
+    - Ref: EnableLogging
+    - 'YES'
+  CreateLogGroup:
+    Fn::And:
+    - Condition: CreateHoztedZone
+    - Condition: LoggingIsEnabled
+Resources:
+  LogGroup:
+    Condition: CreateLogGroup
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Sub: /aws/route53/${HostedZoneName}
+      RetentionInDays:
+        Ref: LogRetentionDays
+  HostedZone:
+    Condition: CreateHoztedZone
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name:
+        Ref: HostedZoneName
+      QueryLoggingConfig:
+        Fn::If:
+        - CreateLogGroup
+        - CloudWatchLogsLogGroupArn:
+            Fn::GetAtt:
+            - LogGroup
+            - Arn
+        - Ref: AWS::NoValue
+Outputs:
+  TemplateID:
+    Description: applying.pe template id.
+    Value: vpc/zone
+  TemplateVersion:
+    Description: applying.pe template version.
+    Value: 1.1.0
+  StackName:
+    Description: Stack name.
+    Value:
+      Fn::Sub: ${AWS::StackName}
+  HostedZoneName:
+    Description: The name of the hosted zone.
+    Value:
+      Ref: HostedZoneName
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-HostedZoneName
+  HostedZonePublicId:
+    Description: The ID of the hosted zone.
+    Value:
+      Fn::If:
+      - CreateHoztedZone
+      - Ref: HostedZone
+      - Ref: HostedZoneId
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-HostedZonePublicId

@@ -1,0 +1,251 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "State: Environment Client security group, a applying.pe template"
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: Stack Dependencies
+        Parameters:
+          - StackNumber
+          - MasterBaseStack
+      - Label:
+          default: Bastion Configuration
+        Parameters:
+          - EC2BastionAMI
+          - EC2BastionInstanceType
+          - EC2BastionKeyPairName
+          - EC2BastionStorageSizeRootDisk
+      - Label:
+          default: Support Configuration
+        Parameters:
+          - AlarmsMail
+Parameters:
+  StackNumber:
+    Description: "Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>"
+    Type: String
+    Default: "00"
+  MasterBaseStack:
+    Type: String
+  MasterVPCStack:
+    Type: String
+  AlarmsMail:
+    Type: String
+    Description: Mail to send service alarms notifications
+    Default: ""
+  ClusterMasterUsername:
+    Description: "[CREATE] Required"
+    Type: String
+    Default: aprueva
+  ClusterMasterUserPassword:
+    Description: "[CREATE] Required, initial master password"
+    Type: String
+    NoEcho: true
+    Default: EKNR?-h8QMPQ+J+8h9epVR%^aY5AepGT
+# PARAMETERS BASTION
+  EC2BastionAMI:
+    Type: String
+    Description: Select AMI to use for the Server instances.
+    Default: 'ami-098e42ae54c764c35'
+    AllowedPattern: '^(ami-([a-zA-Z0-9]{8,})){0,1}$'
+    ConstraintDescription: Must be a valid AMI.
+  EC2BastionInstanceType:
+    Description: Select Amazon EC2 instance type for the WebServer instances.
+    Type: String
+    Default: t3.micro
+  EC2BastionStorageSizeRootDisk:
+    Description: Storage Size for virtual Disk.
+    Type: Number
+    Default: 8
+    MaxValue: 16000
+    MinValue: 1
+    ConstraintDescription: Storage size.
+  RemoteAccessBastionCIDR:
+    Description: Allowed CIDR block for internal access to the Server. Set it to 0.0.0.0/0
+      to make it accessible from anywhere.
+    Type: String
+    Default: 0.0.0.0/0
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))|$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+  
+  HostedZoneName:
+    Description: Hosted Zone Name.
+    Type: String
+    Default: ''
+  HostedZoneId:
+    Description: (Optional) Hosted Zone Id, empty to create a new Hosted Zone
+    Type: String
+    Default: ''
+  Route53EnableLogging:
+    Description: Enable Route53 Logging
+    Type: String
+    Default: 'NO'
+    AllowedValues:
+    - 'NO'
+    - 'YES'
+  Route53LogRetentionDays:
+    Type: Number
+    Default: 30
+Resources:
+  # Topics
+  AlarmsTopic:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../lib/templates/sns/topic.yaml
+      Parameters:
+        StackNumber: !Ref StackNumber
+        EnvironmentStack: !ImportValue
+          "Fn::Sub": "${MasterBaseStack}-EnvironmentStack"
+        TopicName: alarms-notifications
+        Email: !Ref AlarmsMail
+        AlarmStack: !ImportValue
+          "Fn::Sub": "${MasterBaseStack}-SupportTopicStack"
+        AlarmWhenFailedsGT: 0
+  # # Buckets
+  # DataBucketStack:
+  #   Type: AWS::CloudFormation::Stack
+  #   Properties:
+  #     TemplateURL: ../lib/templates/s3/bucket.yaml
+  #     Parameters:
+  #       StackNumber: !Ref StackNumber
+  #       EnvironmentStack: !ImportValue
+  #         'Fn::Sub': '${MasterBaseStack}-EnvironmentStack'
+  #       KmsStack: !ImportValue
+  #         'Fn::Sub': '${MasterBaseStack}-KmsStack'
+  #       Action: 'CREATE'
+  #       BucketName: 'data'
+  # Route53Stack:
+  #   Type: AWS::CloudFormation::Stack
+  #   Properties:
+  #     TemplateURL: ../lib/templates/route53/route53.yaml
+  #     Parameters:
+  #       EnvironmentStack:
+  #         Fn::ImportValue:
+  #           Fn::Sub: "${MasterBaseStack}-EnvironmentStack"
+  #       HostedZoneName:
+  #         Ref: HostedZoneName
+  #       HostedZoneId:
+  #         Ref: HostedZoneId
+  #       EnableLogging:
+  #         Ref: Route53EnableLogging
+  #       LogRetentionDays:
+  #         Ref: Route53LogRetentionDays
+
+  KeyPairStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../lib/templates/ec2/key-pair.yaml
+      Parameters:
+        StackNumber: 
+          Ref: StackNumber
+        EnvironmentStack:
+          Fn::ImportValue:
+            Fn::Sub: "${MasterBaseStack}-EnvironmentStack"
+
+  EC2BastionStack:
+    DependsOn:
+      - KeyPairStack
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../lib/templates/ec2/bastion.yaml
+      Parameters:
+        StackNumber: 
+          Ref: StackNumber
+        EnvironmentStack:
+          Fn::ImportValue:
+            Fn::Sub: "${MasterBaseStack}-EnvironmentStack"
+        KmsStack:
+          Fn::ImportValue:
+            Fn::Sub: "${MasterBaseStack}-KmsStack"
+        VPCStack:
+          Fn::ImportValue:
+            Fn::Sub: "${MasterVPCStack}-VPCStack"
+        EC2BastionAMI: 
+          Ref: EC2BastionAMI
+        EC2BastionInstanceType: 
+          Ref: EC2BastionInstanceType
+        EC2BastionKeyPairName: 
+          Fn::GetAtt:
+            - KeyPairStack
+            - Outputs.KeyPairName
+        EC2BastionStorageSizeRootDisk: 
+          Ref: EC2BastionStorageSizeRootDisk
+        RemoteAccessBastionCIDR:
+          Ref: RemoteAccessBastionCIDR
+  # Secrets
+  # DataBaseSecretStack:
+  #   Type: AWS::CloudFormation::Stack
+  #   Properties:
+  #     TemplateURL: ../lib/templates/secrets-manager/secret.yaml
+  #     Parameters:
+  #       StackNumber: !Ref StackNumber
+  #       EnvironmentStack: !ImportValue
+  #         "Fn::Sub": "${MasterBaseStack}-EnvironmentStack"
+  #       KmsStack: !ImportValue
+  #         "Fn::Sub": "${MasterBaseStack}-KmsStack"
+  #       SecretName: "database/transfordb"
+  #       SecretString:
+  #         Fn::Sub:
+  #           - '{"username":"${USER}", "password":"${PASSWORD}"}'
+  #           - USER:
+  #               Ref: ClusterMasterUsername
+  #             PASSWORD:
+  #               Ref: ClusterMasterUserPassword
+Outputs:
+  TemplateID:
+    Description: applying.pe template id.
+    Value: state/environment
+  TemplateVersion:
+    Description: applying.pe template version.
+    Value: 1.1.0
+  StackName:
+    Description: Stack name.
+    Value: !Sub "${AWS::StackName}"
+  # Alarm Topic Stack
+  AlarmsTopicStack:
+    Value: !GetAtt AlarmsTopic.Outputs.StackName
+    Export:
+      Name: !Sub "${AWS::StackName}-AlarmsTopicStack"
+  AlarmsTopicArn:
+    Value: !GetAtt AlarmsTopic.Outputs.TopicARN
+    Export:
+      Name: !Sub "${AWS::StackName}-AlarmsTopicArn"
+  AlarmsTopicName:
+    Value: !GetAtt AlarmsTopic.Outputs.TopicName
+    Export:
+      Name: !Sub "${AWS::StackName}-AlarmsTopicName"
+  # # Data Bucket Stack
+  # DataBucketStack:
+  #   Value: !GetAtt DataBucketStack.Outputs.StackName
+  #   Export:
+  #     Name: !Sub '${AWS::StackName}-DataBucketStack'
+  # DataBucketArn:
+  #   Value: !GetAtt DataBucketStack.Outputs.BucketArn
+  #   Export:
+  #     Name: !Sub '${AWS::StackName}-DataBucketArn'
+  # DataBucketName:
+  #   Value: !GetAtt DataBucketStack.Outputs.BucketName
+  #   Export:
+  #     Name: !Sub '${AWS::StackName}-DataBucketName'
+  # Secret Manager DataBase Stack
+  # DataBaseSecretStack:
+  #   Value: !GetAtt DataBaseSecretStack.Outputs.StackName
+  #   Export:
+  #     Name: !Sub "${AWS::StackName}-DataBaseSecretStack"
+  # DataBaseSecretArn:
+  #   Value: !GetAtt DataBaseSecretStack.Outputs.SecretArn
+  #   Export:
+  #     Name: !Sub "${AWS::StackName}-DataBaseSecretArn"
+  # DataBaseSecretName:
+  #   Value: !GetAtt DataBaseSecretStack.Outputs.SecretName
+  #   Export:
+  #     Name: !Sub "${AWS::StackName}-DataBaseSecretName"
+  # BastionStack:
+  #   Value: !GetAtt EC2BastionStack.Outputs.StackName
+  #   Export:
+  #     Name: !Sub "${AWS::StackName}-BastionStack"
+  # # Route53
+  # Route53Stack:
+  #   Value: !GetAtt Route53Stack.Outputs.StackName
+  #   Export:
+  #     Name: !Sub "${AWS::StackName}-Route53Stack"
+

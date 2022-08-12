@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: EC2 Bastion Template.
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Environment Settings
+        Parameters:
+          - StackNumber
+      - Label:
+          default: Stacks
+        Parameters:
+          - EnvironmentStack
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  EnvironmentStack:
+    Description: "Required the name of the environment Stack"
+    Type: String
+Resources:
+  BastionKeyPair:
+    Type: 'AWS::EC2::KeyPair'
+    Properties:
+      KeyName: 
+        Fn::Sub:
+          - '${PREFIX}-KeyPair-${StackNumber}-Bastion'
+          - PREFIX: 
+              Fn::ImportValue:
+                Fn::Sub: ${EnvironmentStack}-PrefixResourceName
+Outputs:
+  StackName:
+    Description: Stack name.
+    Value:
+      Fn::Sub: ${AWS::StackName}
+  KeyPairName:
+    Description: BastionKeyPair
+    Value:
+      Ref: BastionKeyPair
+    Export:
+      Name: 
+        Fn::Sub: ${AWS::StackName}-KeyPair
+  KeyPairId:
+    Description: BastionKeyPair
+    Value:
+      Fn::GetAtt:
+        - BastionKeyPair
+        - KeyPairId
+    Export:
+      Name: 
+        Fn::Sub: ${AWS::StackName}-KeyPairId

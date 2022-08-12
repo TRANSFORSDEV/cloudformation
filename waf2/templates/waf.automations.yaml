@@ -1,0 +1,340 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: 'waf automations'
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  # AppLogBucketStack:
+  #   Type: String
+  EnvironmentStack:
+    Description: Optional.
+    Type: String
+  KmsStack:
+    Description: Optional.
+    Type: String
+  WafLogBucketStack:
+    Type: String
+  WAFStack:
+    Type: String
+  CustomResourceWafConfFileStackName:
+    Type: String
+  HttpFloodProtection:
+    Description: Activate Http Flood Protection
+    Type: String
+    Default: 'YES'
+    AllowedValues: ['YES','NO']
+  ScannersProbesProtection:
+    Description: Activate Scanners & Probes Protection
+    Type: String
+    Default: 'YES'
+    AllowedValues: ['YES','NO']
+  LambdaLogLevel:
+    Type: String
+    AllowedValues: ['DEBUG', 'INFO','WARNING', 'ERROR','CRITICAL']
+  BlockPeriod:
+    Type: Number
+    Default: 240
+    MinValue: 0
+    Description: >-
+      If you chose yes for the Activate Scanners & Probes Protection or Http Flood Protection parameters,
+      enter the period (in minutes) to block applicable IP addresses.
+  ErrorThreshold:
+    Type: Number
+    Default: 50
+    MinValue: 0
+    Description: >-
+      If you chose yes for the Activate Scanners & Probes Protection parameter, enter the maximum
+      acceptable bad requests per minute per IP.
+  RequestThreshold:
+    Type: Number
+    Default: 100
+    MinValue: 0
+    Description:  >-
+      If you chose yes for the Activate HTTP Flood Protection parameter, enter the maximum
+      acceptable requests per FIVE-minute period per IP address.
+  EndpointType:
+    Type: String
+    Default: 'ALB'
+    AllowedValues:
+      - 'CloudFront'
+      - 'ALB'
+      - 'APIGATEWAY'
+    Description: Select the type of resource being used.
+  LogType:
+    Type: String
+    Default: 'waf'
+    AllowedValues:
+      - 'waf'
+      - 'alb'
+      - 'cloudfront'
+    Description: Select the type of resource being used.
+  CountToken:
+    Type: String
+    Default: 'NO'
+    AllowedValues:
+      - 'YES'
+      - 'NO'
+    Description: Select the type of resource being used.
+  ChangeDeviceToken:
+    Type: String
+    Default: 'NO'
+    AllowedValues:
+      - 'YES'
+      - 'NO'
+    Description: Select the type of resource being used.
+
+Conditions:
+  HasHttpFloodProtection: !Equals
+    - !Ref HttpFloodProtection
+    - 'YES'
+  HasHttpScannersProbesProtection: !Equals
+    - !Ref ScannersProbesProtection
+    - 'YES'
+  LogParser: !Or
+    - Condition: HasHttpFloodProtection
+    - Condition: HasHttpScannersProbesProtection
+  ResourceEndpoint: !Or
+    - !Equals
+      - !Ref EndpointType
+      - 'ALB'
+    - !Equals
+      - !Ref EndpointType
+      - 'APIGATEWAY'
+Resources:
+
+  WafAnalyzerFunction:
+    Type: 'AWS::Lambda::Function'
+    Condition: LogParser
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: "Log permissions are defined in the LambdaRoleLogParser policies"
+    Properties:
+      Description: >-
+        This function parses access logs to identify suspicious behavior, such as an abnormal amount of errors.
+        It then blocks those IP addresses for a customer-defined period of time.
+      FunctionName: !Sub
+        - '${PREFIX}-LA-${StackNumber}-WafAnalyzer'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Handler: 'log-parser.lambda_handler'
+      Role: !GetAtt WafAnalyzerFunctionRole.Arn
+      Code: ../output/log-parser
+      Environment:
+        Variables:
+          # APP_ACCESS_LOG_BUCKET:
+          #   'Fn::ImportValue': !Sub '${AppLogBucketStack}-BucketName'
+          WAF_ACCESS_LOG_BUCKET:
+            'Fn::ImportValue': !Sub '${WafLogBucketStack}-BucketName'
+          SEND_ANONYMOUS_USAGE_DATA: 'No'
+          UUID: 'a2829297-1591-4924-99c8-e70b7b9678b3' #!GetAtt CreateUniqueID.UUID
+          LIMIT_IP_ADDRESS_RANGES_PER_IP_MATCH_CONDITION: '10000'
+          MAX_AGE_TO_UPDATE: '30'
+          REGION: !Ref 'AWS::Region'
+          SCOPE: !If [ ResourceEndpoint, 'REGIONAL', 'CLOUDFRONT' ]
+          LOG_TYPE: !Ref LogType
+          METRIC_NAME_PREFIX: !Join [ '', !Split [ '-', !Ref 'AWS::StackName' ] ]
+          LOG_LEVEL: !Ref LambdaLogLevel
+          STACK_NAME: !Ref CustomResourceWafConfFileStackName #'AWSWAFSecurityAutomations' #!Ref 'AWS::StackName'
+          IP_SET_ID_HTTP_FLOODV4: !If
+            - HasHttpFloodProtection
+            - 'Fn::ImportValue': !Sub '${WAFStack}-WAFHttpFloodSetV4Arn'
+            - !Ref 'AWS::NoValue'
+          IP_SET_ID_HTTP_FLOODV6: !If
+            - HasHttpFloodProtection
+            - 'Fn::ImportValue': !Sub '${WAFStack}-WAFHttpFloodSetV6Arn'
+            - !Ref 'AWS::NoValue'
+          IP_SET_NAME_HTTP_FLOODV4: !If
+            - HasHttpFloodProtection
+            - 'Fn::ImportValue': !Sub '${WAFStack}-NameHttpFloodSetV4'
+            - !Ref 'AWS::NoValue'
+          IP_SET_NAME_HTTP_FLOODV6: !If
+            - HasHttpFloodProtection
+            - 'Fn::ImportValue': !Sub '${WAFStack}-NameHttpFloodSetV6'
+            - !Ref 'AWS::NoValue'
+          IP_SET_ID_SCANNERS_PROBESV4: !If
+            - HasHttpScannersProbesProtection
+            - 'Fn::ImportValue': !Sub '${WAFStack}-WAFScannersProbesSetV4Arn'
+            - !Ref 'AWS::NoValue'
+          IP_SET_ID_SCANNERS_PROBESV6: !If
+            - HasHttpScannersProbesProtection
+            - 'Fn::ImportValue': !Sub '${WAFStack}-WAFScannersProbesSetV6Arn'
+            - !Ref 'AWS::NoValue'
+          IP_SET_NAME_SCANNERS_PROBESV4: !If
+            - HasHttpScannersProbesProtection
+            - 'Fn::ImportValue': !Sub '${WAFStack}-NameScannersProbesSetV4'
+            - !Ref 'AWS::NoValue'
+          IP_SET_NAME_SCANNERS_PROBESV6: !If
+            - HasHttpScannersProbesProtection
+            - 'Fn::ImportValue': !Sub '${WAFStack}-NameScannersProbesSetV6'
+            - !Ref 'AWS::NoValue'
+          WAF_BLOCK_PERIOD: !Ref BlockPeriod
+          ERROR_THRESHOLD: !Ref ErrorThreshold
+          REQUEST_THRESHOLD: !Ref RequestThreshold
+          SOLUTION_ID: 'SO0006' #!FindInMap [ Solution, Data, SolutionID ]
+          METRICS_URL: 'https://metrics.awssolutionsbuilder.com/generic' #!FindInMap [ Solution, Data, MetricsURL ]
+          COUNT_TOKEN: !Ref CountToken
+          CHANGE_DEVICE_TOKEN: !Ref ChangeDeviceToken
+      Runtime: python3.8
+      MemorySize: 512
+      Timeout: 300
+
+  WafAnalyzerFunctionRole:
+    Type: 'AWS::IAM::Role'
+    Condition: LogParser
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: '/'
+      Policies:
+        # - !If
+        #   - HasHttpScannersProbesProtection
+        #   - PolicyName: HasHttpScannersProbesProtectionAccess
+        #     PolicyDocument:
+        #       Statement:
+        #         # S3 Resources
+        #         - Effect: Allow
+        #           Action: 's3:GetObject'
+        #           Resource:
+        #             - !Sub
+        #               - 'arn:${AWS::Partition}:s3:::${BUCKET_NAME}/*'
+        #               - BUCKET_NAME:
+        #                   'Fn::ImportValue': !Sub '${AppLogBucketStack}-BucketName'
+        #         - Effect: Allow
+        #           Action:
+        #             - 's3:PutObject'
+        #             - 's3:GetObject'
+        #           Resource:
+        #             - !Sub
+        #               - 'arn:${AWS::Partition}:s3:::${BUCKET_NAME}/${CustomResourceWafConfFileStackName}-app_log_out.json'
+        #               - BUCKET_NAME:
+        #                   'Fn::ImportValue': !Sub '${AppLogBucketStack}-BucketName'
+        #             - !Sub
+        #               - 'arn:${AWS::Partition}:s3:::${BUCKET_NAME}/${CustomResourceWafConfFileStackName}-app_log_out_count_token.json'
+        #               - BUCKET_NAME:
+        #                   'Fn::ImportValue': !Sub '${AppLogBucketStack}-BucketName'
+        #             - !Sub
+        #               - 'arn:${AWS::Partition}:s3:::${BUCKET_NAME}/${CustomResourceWafConfFileStackName}-app_log_out_change_device_token.json'
+        #               - BUCKET_NAME:
+        #                   'Fn::ImportValue': !Sub '${AppLogBucketStack}-BucketName'
+        #             - !Sub
+        #               - 'arn:${AWS::Partition}:s3:::${BUCKET_NAME}/${CustomResourceWafConfFileStackName}-app_log_conf.json'
+        #               - BUCKET_NAME:
+        #                   'Fn::ImportValue': !Sub '${AppLogBucketStack}-BucketName'
+        #         - Effect: Allow
+        #           Action:
+        #             - 'wafv2:GetIPSet'
+        #             - 'wafv2:UpdateIPSet'
+        #           Resource:
+        #             - 'Fn::ImportValue': !Sub '${WAFStack}-WAFScannersProbesSetV4Arn'
+        #             - 'Fn::ImportValue': !Sub '${WAFStack}-WAFScannersProbesSetV6Arn'
+        #   - !Ref 'AWS::NoValue'
+        - !If
+          - HasHttpFloodProtection
+          - PolicyName: HasHttpFloodProtectionAccess
+            PolicyDocument:
+              Statement:
+                # S3 Resources
+                - Effect: Allow
+                  Action: 's3:GetObject'
+                  Resource:
+                    - !Sub
+                      - 'arn:${AWS::Partition}:s3:::${BUCKET_NAME}/*'
+                      - BUCKET_NAME:
+                          'Fn::ImportValue': !Sub '${WafLogBucketStack}-BucketName'
+                - Effect: Allow
+                  Action:
+                    - 's3:PutObject'
+                    - 's3:GetObject'
+                  Resource:
+                    - !Sub
+                      - 'arn:${AWS::Partition}:s3:::${BUCKET_NAME}/${CustomResourceWafConfFileStackName}-waf_log_out.json'
+                      - BUCKET_NAME:
+                          'Fn::ImportValue': !Sub '${WafLogBucketStack}-BucketName'
+                    - !Sub
+                      - 'arn:${AWS::Partition}:s3:::${BUCKET_NAME}/${CustomResourceWafConfFileStackName}-waf_log_out_count_token.json'
+                      - BUCKET_NAME:
+                          'Fn::ImportValue': !Sub '${WafLogBucketStack}-BucketName'
+                    - !Sub
+                      - 'arn:${AWS::Partition}:s3:::${BUCKET_NAME}/${CustomResourceWafConfFileStackName}-waf_log_out_change_device_token.json'
+                      - BUCKET_NAME:
+                          'Fn::ImportValue': !Sub '${WafLogBucketStack}-BucketName'
+                    - !Sub
+                      - 'arn:${AWS::Partition}:s3:::${BUCKET_NAME}/${CustomResourceWafConfFileStackName}-waf_log_conf.json'
+                      - BUCKET_NAME:
+                          'Fn::ImportValue': !Sub '${WafLogBucketStack}-BucketName'
+                # AWS WAF Resources
+                - Effect: Allow
+                  Action:
+                    - 'wafv2:GetIPSet'
+                    - 'wafv2:UpdateIPSet'
+                  Resource:
+                    - !ImportValue
+                        'Fn::Sub': '${WAFStack}-WAFHttpFloodSetV4Arn'
+                    - !ImportValue
+                        'Fn::Sub': '${WAFStack}-WAFHttpFloodSetV6Arn'
+          - !Ref 'AWS::NoValue'
+        - PolicyName: LogsAccess
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource:
+                  - !Sub
+                    - 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${PREFIX}-LA-${StackNumber}-WafAnalyzer:*'
+                    - PREFIX: !ImportValue
+                        'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+        - PolicyName: KmsAccess
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'kms:Decrypt'
+                  - 'kms:Encrypt'
+                  - 'kms:GenerateDataKey'
+                Resource:
+                  - !Sub
+                    - 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/${KeyDefaultId}'
+                    - KeyDefaultId:
+                        'Fn::ImportValue': !Sub '${KmsStack}-KeyId'
+        - PolicyName: CloudWatchAccess
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: 'cloudwatch:GetMetricStatistics'
+                Resource:
+                  - '*'
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: >-
+              LogsAccess - permission restricted to account, region and log group name substring (LogParser);
+              CloudWatchAccess - this actions does not support resource-level permissions
+  WafAnalyzerFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt WafAnalyzerFunction.Arn
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref "AWS::AccountId"
+      SourceArn:
+        'Fn::ImportValue': !Sub '${WafLogBucketStack}-BucketArn'
+Outputs:
+  StackName:
+    Description: Stack name.
+    Value: !Sub '${AWS::StackName}'
+  WafAnalyzerFunctionArn:
+    Description: Stack name.
+    Value: !GetAtt WafAnalyzerFunction.Arn

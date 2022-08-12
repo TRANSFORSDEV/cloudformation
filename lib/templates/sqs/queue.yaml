@@ -1,0 +1,203 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  EnvironmentStack:
+    Description: "Required the name of the environment Stack"
+    Type: String
+  Action:
+    Type: String
+    AllowedValues:
+      - IMPORT
+      - CREATE
+    Default: "CREATE"
+  KmsStack:
+    Description: "[CREATE] optional"
+    Type: String
+    Default: ''
+  Name:
+    Description: "[CREATE] required"
+    Type: String
+    Default: ''
+  Type:
+    Description: "[CREATE] optional"
+    Type: String
+    AllowedValues: [ FIFO, STANDARD ]
+    Default: STANDARD
+  DelaySeconds:
+    Description: "[CREATE] optional"
+    Type: Number
+    Default: 30
+    MinValue: 0
+    MaxValue: 900 # 15 m
+  MaximumMessageSizeBytes:
+    Description: "[CREATE] optional"
+    Type: Number
+    Default: 262144 # 256 KiB
+    MinValue: 1024 # 1 KiB
+    MaxValue: 262144 # 256 KiB
+  MessageRetentionPeriodSeconds:
+    Description: "[CREATE] optional"
+    Type: Number
+    MinValue: 60
+    MaxValue: 1209600 # 14 d
+    Default: 345600 # 4 d
+  ReceiveMessageWaitTimeSeconds:
+    Description: "[CREATE] optional"
+    Type: Number
+    Default: 20
+  VisibilityTimeoutSecond:
+    Description: "[CREATE] optional"
+    Type: Number
+    Default: 30
+    MinValue: 0
+    MaxValue: 43200 # 12 h
+  DeadLetterQueueStack:
+    Description: "[CREATE] optional"
+    Type: String
+    Default: ''
+  MaxReceiveCount:
+    Type: Number
+    Default: 2
+  QueueArn:
+    Description: "[IMPORT] required"
+    Type: String
+    Default: ''
+  AlarmStack:
+    Type: String
+    Default: ''
+  AlarmWhenDepthGT:
+    Description: Alarm when queue depth greather than
+    Type: String
+    AllowedPattern: '\d+|^$'
+    Default: ''
+  AlarmWhenAgeGT:
+    Description: Alarm when oldest message age greather than
+    Type: String
+    AllowedPattern: '\d+|^$'
+    Default: ''
+Conditions:
+  IsImport: !Equals [ !Ref Action, IMPORT ]
+  IsCreate: !Equals [ !Ref Action, CREATE ]
+  IsFifo: !Equals [ !Ref Type, FIFO ]
+  EnableEncryption: !Not [ !Equals [ !Ref KmsStack, '' ] ]
+  HasDeadLetterQueueStack: !Not [ !Equals [ !Ref DeadLetterQueueStack, '' ] ]
+  HasAlarmWhenDepthGT: !Not [!Equals [!Ref AlarmWhenDepthGT, '']]
+  HasAlarmWhenAgeGT: !Not [!Equals [!Ref AlarmWhenAgeGT, '']]
+Resources:
+  Queue:
+    Condition: IsCreate
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub
+        - '${PREFIX}-SQS-${StackNumber}-${Name}${FIFO}'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+          FIFO: !If [ IsFifo, '.fifo', '' ]
+      FifoQueue: !If [ IsFifo, true, !Ref "AWS::NoValue" ]
+      DelaySeconds: !Ref DelaySeconds
+      MaximumMessageSize: !Ref MaximumMessageSizeBytes
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout: !Ref VisibilityTimeoutSecond
+      KmsMasterKeyId: !If
+        - EnableEncryption
+        - !ImportValue
+          'Fn::Sub': '${KmsStack}-KeyId'
+        - !Ref AWS::NoValue
+      RedrivePolicy: !If
+        - HasDeadLetterQueueStack
+        - deadLetterTargetArn: !ImportValue
+            'Fn::Sub': '${DeadLetterQueueStack}-QueueArn'
+          maxReceiveCount: !Ref MaxReceiveCount
+        - !Ref AWS::NoValue
+  Policy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref Queue
+      PolicyDocument:
+        Statement:
+          - Action:
+              - "SQS:SendMessage"
+              - "SQS:ReceiveMessage"
+            Effect: "Allow"
+            Resource: !GetAtt Queue.Arn
+            Principal:
+              AWS:
+                - !Ref AWS::AccountId
+  QueueDepthAlarm:
+    Condition: HasAlarmWhenDepthGT
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub
+        - "${RESOURCE_NAME}-${METRIC_NAME}"
+        - RESOURCE_NAME: !GetAtt Queue.QueueName
+          METRIC_NAME: "ApproximateNumberOfMessagesVisible"
+      Namespace: "AWS/SQS"
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: "QueueName"
+          Value: !GetAtt Queue.QueueName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: !Ref AlarmWhenDepthGT
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !ImportValue
+          'Fn::Sub': '${AlarmStack}-TopicARN'
+  QueueOldMessageAlarm:
+    Condition: HasAlarmWhenAgeGT
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub
+        - "${QUEUE_NAME}-${METRIC}-alarm"
+        - QUEUE_NAME: !GetAtt Queue.QueueName
+          METRIC: ApproximateAgeOfOldestMessage
+      Namespace: "AWS/SQS"
+      MetricName: ApproximateAgeOfOldestMessage
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt Queue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: !Ref AlarmWhenAgeGT
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !ImportValue
+          'Fn::Sub': '${AlarmStack}-TopicARN'
+Outputs:
+  TemplateID:
+    Description: 'applying.pe template id.'
+    Value: 'S3/Bucket'
+  TemplateVersion:
+    Description: 'applying.pe template version.'
+    Value: '1.1.0'
+  StackName:
+    Description: 'Stack name.'
+    Value: !Sub '${AWS::StackName}'
+  QueueArn:
+    Value: !If [ IsCreate, !GetAtt Queue.Arn, !Ref QueueArn ]
+    Export:
+      Name: !Sub '${AWS::StackName}-QueueArn'
+  QueueName:
+    Value: !If
+      - IsCreate
+      - !GetAtt Queue.QueueName
+      - !Select [4, !Split ["/", !Ref QueueArn]]
+    Export:
+      Name: !Sub '${AWS::StackName}-QueueName'
+  QueueUrl:
+    Value: !If
+      - IsCreate
+      - !Ref Queue
+      - !Sub
+        - "https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/${QUEUE_NAME}"
+        - QUEUE_NAME: !Select [4, !Split ["/", !Ref QueueArn]]
+    Export:
+      Name: !Sub '${AWS::StackName}-QueueUrl'
+

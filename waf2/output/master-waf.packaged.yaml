@@ -1,0 +1,474 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'State: Environment Client security group, a applying.pe template'
+Parameters:
+  StackNumber:
+    Description: Use to avoid conflicts when deploy various instances of this instance
+      with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>
+    Type: String
+    Default: '00'
+  MasterBaseStack:
+    Description: Stack name of base stack.
+    Type: String
+    Default: LPSTV-0001-DVSC-SCP-ST-00-MASTER-BASE
+  MasterElbStack:
+    Description: Stack name of base stack.
+    Type: String
+  MasterApiGatewayStack:
+    Description: Stack name of base stack.
+    Type: String
+  WafName:
+    Description: Name for WAF
+    Type: String
+  DefaultAction:
+    Description: Default Action for WAF
+    Type: String
+  A1Injection:
+    Description: Active OWASP A1 Injection
+    Type: String
+    AllowedValues:
+    - 'YES'
+    - 'NO'
+    Default: 'YES'
+  A3CrossSiteScripting:
+    Description: Active OWASP A3 Cross-Site Scripting
+    Type: String
+    AllowedValues:
+    - 'YES'
+    - 'NO'
+    Default: 'YES'
+  A4BrokenAccessControl:
+    Description: Active OWASP A4 Broken Access Control
+    Type: String
+    AllowedValues:
+    - 'YES'
+    - 'NO'
+    Default: 'YES'
+  A5SecurityMisconfiguration:
+    Description: Active OWASP A5 Security Misconfiguration for spring boot applications
+    Type: String
+    AllowedValues:
+    - 'YES'
+    - 'NO'
+    Default: 'YES'
+  A7InsufficientAttackProtection:
+    Description: "Active OWASP A7 \xE2\u20AC\u201C Insufficient Attack Protections"
+    Type: String
+    AllowedValues:
+    - 'YES'
+    - 'NO'
+    Default: 'YES'
+  A8CrossSiteRequestForgery:
+    Description: "Active OWASP A8 \xE2\u20AC\u201C Cross-Site Request Forgery"
+    Type: String
+    AllowedValues:
+    - 'YES'
+    - 'NO'
+    Default: 'YES'
+  MaxExpectedBodySize:
+    Type: Number
+    Description: Maximum number of bytes allowed in the URI component of the HTTP
+      request. 128000 = 128KB
+    Default: 128000
+  MaxExpectedURISize:
+    Type: Number
+    Description: Maximum number of bytes allowed in the URI component of the HTTP
+      request. 128 = 0.128KB
+    Default: 128
+  MaxExpectedQueryStringSize:
+    Type: Number
+    Description: Maximum number of bytes allowed in the query string component of
+      the HTTP request. 256 = 0.256KB
+    Default: 256
+  MaxExpectedHeaderAuthorization:
+    Type: Number
+    Description: Maximum number of bytes allowed in the header authorization. 1900
+      = 1.9KB
+    Default: 1900
+  MaxExpectedHeaderCSRF:
+    Type: Number
+    Description: Maximum number of bytes allowed in the header CSRF x-csrf-token.
+      37 = 0.037KB
+    Default: 37
+  RequestThreshold:
+    Type: Number
+    Description: Amount of allowed request per IP and token
+    Default: 200
+  WAFBlockPeriod:
+    Type: Number
+    Description: Time in min for block to IPs
+    Default: 5
+Conditions:
+  HasMasterElbStack:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: MasterElbStack
+      - ''
+  HasMasterApiGatewayStack:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: MasterApiGatewayStack
+      - ''
+  ActiveA1Injection:
+    Fn::Equals:
+    - Ref: A1Injection
+    - 'YES'
+  ActiveA3XSS:
+    Fn::Equals:
+    - Ref: A3CrossSiteScripting
+    - 'YES'
+  ActiveA4BrokenAccessControl:
+    Fn::Equals:
+    - Ref: A4BrokenAccessControl
+    - 'YES'
+  ActiveA5SecMisconf:
+    Fn::Equals:
+    - Ref: A5SecurityMisconfiguration
+    - 'YES'
+  ActiveA7InsufficientAttack:
+    Fn::Equals:
+    - Ref: A7InsufficientAttackProtection
+    - 'YES'
+  ActiveA8CrossSiteRequestForgery:
+    Fn::Equals:
+    - Ref: A8CrossSiteRequestForgery
+    - 'YES'
+  ActivateHttpFloodProtection:
+    Fn::Or:
+    - Condition: ActiveA7InsufficientAttack
+    - Condition: ActiveA7InsufficientAttack
+  ActivateScannersProbesProtection:
+    Fn::Or:
+    - Condition: ActiveA7InsufficientAttack
+    - Condition: ActiveA7InsufficientAttack
+  CreateAutomations:
+    Fn::Or:
+    - Condition: ActivateHttpFloodProtection
+    - Condition: ActivateScannersProbesProtection
+Resources:
+  S3LogBucketStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.us-east-1.amazonaws.com/transfors-template-arq/transfors/prd/be7aedcf74d3826e883496419f9eeb09.template
+      Parameters:
+        StackNumber:
+          Ref: StackNumber
+        EnvironmentStack:
+          Fn::ImportValue:
+            Fn::Sub: ${MasterBaseStack}-EnvironmentStack
+        KmsStack:
+          Fn::ImportValue:
+            Fn::Sub: ${MasterBaseStack}-KmsStack
+        Action: CREATE
+        BucketName: logs
+  VariablesStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.us-east-1.amazonaws.com/transfors-template-arq/transfors/prd/bece89e945c4fb0a7f88ae810d33234e.template
+      Parameters:
+        WafLogBucketStack:
+          Fn::GetAtt:
+          - S3LogBucketStack
+          - Outputs.StackName
+        EndpointType: ALB
+  KinesisFirehoseStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.us-east-1.amazonaws.com/transfors-template-arq/transfors/prd/8bf0ebecd7d47878ac8889a74f86778d.template
+      Parameters:
+        StackNumber:
+          Ref: StackNumber
+        EnvironmentStack:
+          Fn::ImportValue:
+            Fn::Sub: ${MasterBaseStack}-EnvironmentStack
+        KmsStack:
+          Fn::ImportValue:
+            Fn::Sub: ${MasterBaseStack}-KmsStack
+        S3TargetStack:
+          Fn::GetAtt:
+          - VariablesStack
+          - Outputs.WafLogBucketStack
+        S3Encryption: 'YES'
+        S3Prefix: waf-logs
+        BufferIntervalInSeconds: 300
+        BufferSizeInMBs: 5
+  WAFStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.us-east-1.amazonaws.com/transfors-template-arq/transfors/prd/46d836fdf2e77624b2594b7c54c25345.template
+      Parameters:
+        StackNumber:
+          Ref: StackNumber
+        EnvironmentStack:
+          Fn::ImportValue:
+            Fn::Sub: ${MasterBaseStack}-EnvironmentStack
+        ElbStack:
+          Fn::If:
+          - HasMasterElbStack
+          - Fn::ImportValue:
+              Fn::Sub: ${MasterElbStack}-LoadBalancerStack
+          - ''
+        ApiGatewayStack:
+          Fn::If:
+          - HasMasterApiGatewayStack
+          - Fn::ImportValue:
+              Fn::Sub: ${MasterApiGatewayStack}-ApiGatewayStack
+          - ''
+        WafName:
+          Ref: WafName
+        DefaultAction:
+          Ref: DefaultAction
+        EndpointType:
+          Fn::GetAtt:
+          - VariablesStack
+          - Outputs.EndpointType
+        EnableSQLInjectionProtection:
+          Fn::If:
+          - ActiveA1Injection
+          - 'YES'
+          - 'NO'
+        EnableXSSInjectionProtection:
+          Fn::If:
+          - ActiveA3XSS
+          - 'YES'
+          - 'NO'
+        EnableBlockRfiLfi:
+          Fn::If:
+          - ActiveA4BrokenAccessControl
+          - 'YES'
+          - 'NO'
+        EnableBlockSpringBootEndpoint:
+          Fn::If:
+          - ActiveA5SecMisconf
+          - 'YES'
+          - 'NO'
+        EnableSizeRestrinction:
+          Fn::If:
+          - ActiveA7InsufficientAttack
+          - 'YES'
+          - 'NO'
+        EnableCrossSiteRequestForgery:
+          Fn::If:
+          - ActiveA8CrossSiteRequestForgery
+          - 'YES'
+          - 'NO'
+        MaxExpectedURISize:
+          Ref: MaxExpectedURISize
+        MaxExpectedQueryStringSize:
+          Ref: MaxExpectedQueryStringSize
+        MaxExpectedBodySize:
+          Ref: MaxExpectedBodySize
+        MaxExpectedHeaderAuthorization:
+          Ref: MaxExpectedHeaderAuthorization
+        MaxExpectedHeaderCSRF:
+          Ref: MaxExpectedHeaderCSRF
+        BlockFromIpHttpflood:
+          Fn::If:
+          - ActivateHttpFloodProtection
+          - 'YES'
+          - 'NO'
+        AllowFromIpHttpflood: 'NO'
+        AllowIpsV4: ''
+        AllowIpsV6: ''
+        BlockFromIpScannersProbes:
+          Fn::If:
+          - ActivateScannersProbesProtection
+          - 'YES'
+          - 'NO'
+  CustomResourceWafLogStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.us-east-1.amazonaws.com/transfors-template-arq/transfors/prd/3f58f8f6f61c8fe656387d57c313b8c1.template
+      Parameters:
+        StackNumber:
+          Ref: StackNumber
+        WafLogBucketStack:
+          Fn::GetAtt:
+          - VariablesStack
+          - Outputs.WafLogBucketStack
+        LambdaLogLevel: INFO
+        WAFStack:
+          Fn::GetAtt:
+          - WAFStack
+          - Outputs.StackName
+        EnvironmentStack:
+          Fn::ImportValue:
+            Fn::Sub: ${MasterBaseStack}-EnvironmentStack
+        EndpointType:
+          Fn::GetAtt:
+          - VariablesStack
+          - Outputs.EndpointType
+  ConfigureAWSWAFLogs:
+    Type: Custom::ConfigureAWSWAFLogs
+    Properties:
+      StackNumber:
+        Ref: StackNumber
+      ServiceToken:
+        Fn::GetAtt:
+        - CustomResourceWafLogStack
+        - Outputs.ConfigureWafLoggingArn
+      WAFWebACLArn:
+        Fn::GetAtt:
+        - WAFStack
+        - Outputs.WebACLArn
+      DeliveryStreamArn:
+        Fn::GetAtt:
+        - KinesisFirehoseStack
+        - Outputs.DeliveryStreamArn
+  CustomResourceLogBucketStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.us-east-1.amazonaws.com/transfors-template-arq/transfors/prd/4d8a7714d8c3c7062c4ada091047c71d.template
+      Parameters:
+        StackNumber:
+          Ref: StackNumber
+        WafLogBucketStack:
+          Fn::GetAtt:
+          - VariablesStack
+          - Outputs.WafLogBucketStack
+        LambdaLogLevel: INFO
+        WAFStack:
+          Fn::GetAtt:
+          - WAFStack
+          - Outputs.StackName
+        EnvironmentStack:
+          Fn::ImportValue:
+            Fn::Sub: ${MasterBaseStack}-EnvironmentStack
+  CustomResourceWafConfFileStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.us-east-1.amazonaws.com/transfors-template-arq/transfors/prd/f112145aefddd55f47db239e3f95f99e.template
+      Parameters:
+        StackNumber:
+          Ref: StackNumber
+        WafLogBucketStack:
+          Fn::GetAtt:
+          - VariablesStack
+          - Outputs.WafLogBucketStack
+        LambdaLogLevel: INFO
+        WAFStack:
+          Fn::GetAtt:
+          - WAFStack
+          - Outputs.StackName
+        EnvironmentStack:
+          Fn::ImportValue:
+            Fn::Sub: ${MasterBaseStack}-EnvironmentStack
+        KmsStack:
+          Fn::ImportValue:
+            Fn::Sub: ${MasterBaseStack}-KmsStack
+  GenerateWafLogParserConfFile:
+    Type: Custom::GenerateWafLogParserConfFile
+    Condition: CreateAutomations
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - CustomResourceWafConfFileStack
+        - Outputs.GenerateWafConfFileArn
+      StackName:
+        Fn::GetAtt:
+        - CustomResourceWafConfFileStack
+        - Outputs.StackName
+      WafAccessLogBucket:
+        Fn::GetAtt:
+        - S3LogBucketStack
+        - Outputs.BucketName
+      RequestThreshold:
+        Ref: RequestThreshold
+      WAFBlockPeriod:
+        Ref: WAFBlockPeriod
+  WafAutomationsStack:
+    Type: AWS::CloudFormation::Stack
+    Condition: CreateAutomations
+    Properties:
+      TemplateURL: https://s3.us-east-1.amazonaws.com/transfors-template-arq/transfors/prd/6703063e5d58745ecb23c63c6e01f412.template
+      Parameters:
+        StackNumber:
+          Ref: StackNumber
+        EnvironmentStack:
+          Fn::ImportValue:
+            Fn::Sub: ${MasterBaseStack}-EnvironmentStack
+        KmsStack:
+          Fn::ImportValue:
+            Fn::Sub: ${MasterBaseStack}-KmsStack
+        WAFStack:
+          Fn::GetAtt:
+          - WAFStack
+          - Outputs.StackName
+        CustomResourceWafConfFileStackName:
+          Fn::GetAtt:
+          - CustomResourceWafConfFileStack
+          - Outputs.StackName
+        WafLogBucketStack:
+          Fn::GetAtt:
+          - VariablesStack
+          - Outputs.WafLogBucketStack
+        HttpFloodProtection:
+          Fn::If:
+          - ActivateHttpFloodProtection
+          - 'YES'
+          - 'NO'
+        ScannersProbesProtection:
+          Fn::If:
+          - ActivateScannersProbesProtection
+          - 'YES'
+          - 'NO'
+        LambdaLogLevel: INFO
+        BlockPeriod: 10
+        ErrorThreshold: 5
+        RequestThreshold: 10
+        EndpointType:
+          Fn::GetAtt:
+          - VariablesStack
+          - Outputs.EndpointType
+        LogType: waf
+        CountToken:
+          Fn::If:
+          - ActiveA4BrokenAccessControl
+          - 'YES'
+          - 'NO'
+        ChangeDeviceToken:
+          Fn::If:
+          - ActiveA4BrokenAccessControl
+          - 'YES'
+          - 'NO'
+  ConfigureAWSLogBucket:
+    Type: Custom::ConfigureWafLogBucket
+    Condition: CreateAutomations
+    DependsOn:
+    - WafAutomationsStack
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - CustomResourceLogBucketStack
+        - Outputs.ConfigureAppLogBucketArn
+      WAFWebACLArn:
+        Fn::GetAtt:
+        - WAFStack
+        - Outputs.WebACLArn
+      DeliveryStreamArn:
+        Fn::GetAtt:
+        - KinesisFirehoseStack
+        - Outputs.DeliveryStreamArn
+      HttpFloodLambdaLogParser:
+        Fn::If:
+        - ActivateHttpFloodProtection
+        - 'yes'
+        - 'no'
+      WafLogBucket:
+        Fn::GetAtt:
+        - S3LogBucketStack
+        - Outputs.BucketName
+      LogParser:
+        Fn::GetAtt:
+        - WafAutomationsStack
+        - Outputs.WafAnalyzerFunctionArn
+Outputs:
+  TemplateID:
+    Description: applying.pe template id.
+    Value: state/environment
+  TemplateVersion:
+    Description: applying.pe template version.
+    Value: 1.1.0
+  StackName:
+    Description: Stack name.
+    Value:
+      Fn::Sub: ${AWS::StackName}

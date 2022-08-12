@@ -1,0 +1,1003 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'State: WAF, a applying.pe template'
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: 'Stack Dependencies'
+        Parameters:
+          - BaseStack
+          - ElbStack
+          - ApiGatewayStack
+      - Label:
+          default: 'SQL Injection protection'
+        Parameters:
+          - EnableSQLInjectionProtection
+      - Label:
+          default: 'XSS Injection protection'
+        Parameters:
+          - EnableXSSInjectionProtection
+      - Label:
+          default: 'Abnormal Requests protection via size restrictions'
+        Parameters:
+          - EnableSizeRestrinction
+          - MaxExpectedURISize
+          - MaxExpectedQueryStringSize
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  # Stack Dependencies
+  EnvironmentStack:
+    Description: Stack name of base stack.
+    Type: String
+    Default: RANS-0004-UMIL-UMQ-ST-00-BASE
+  ElbStack:
+    Description: Stack name of ecs stack.
+    Type: String
+    Default: RANS-0004-UMIL-UMQ-ST-00-ECS-BASE
+  ApiGatewayStack:
+    Description: Stack name of api gateway stack.
+    Type: String
+  WafName:
+    Description: Name for WAF
+    Type: String
+  DefaultAction:
+    Description: Default Action for WAF
+    Type: String
+  # OPTIONS
+  ## Enable SQL Injection protection
+  EnableSQLInjectionProtection:
+    Description: Enable SQL Injection protection
+    Type: String
+    Default: 'YES'
+    AllowedValues: [ 'YES','NO' ]
+  ## Enable XSS Injection protection
+  EnableXSSInjectionProtection:
+    Description: Enable XSS Injection protection
+    Type: String
+    Default: 'YES'
+    AllowedValues: [ 'YES','NO' ]
+  ## Enable RFI/LFI Injection protection
+  EnableBlockRfiLfi:
+    Description: Enable RFI/LFI protection
+    Type: String
+    Default: 'YES'
+    AllowedValues: [ 'YES','NO' ]
+  ## Enable RFI/LFI Injection protection
+  EnableBlockSpringBootEndpoint:
+    Description: block request to spring boot build-in endpoints
+    Type: String
+    Default: 'YES'
+    AllowedValues: [ 'YES','NO' ]
+  ## Enable Abnormal Requests protection via size restrictions
+  EnableSizeRestrinction:
+    Description: Enable Abnormal Requests protection via size restrictions
+    Type: String
+    Default: 'YES'
+    AllowedValues: [ 'YES','NO' ]
+  ## Enable CSRF by expect the value in a custom HTTP header named x-csrf-token, implementing a size constraint condition
+  EnableCrossSiteRequestForgery:
+    Description: Enable CSRF by expect the value in a custom HTTP header named x-csrf-token, implementing a size constraint condition and POST HTTP requests
+    Type: String
+    Default: 'YES'
+    AllowedValues: [ 'YES','NO' ]
+
+  MaxExpectedBodySize:
+    Type: Number
+    Description: Maximum number of bytes allowed in the URI component of the HTTP request. 128000 = 128KB
+    Default: 128000
+  MaxExpectedURISize:
+    Type: Number
+    Description: Maximum number of bytes allowed in the URI component of the HTTP request. 128 = 0.128KB
+    Default: 128
+  MaxExpectedQueryStringSize:
+    Type: Number
+    Description: Maximum number of bytes allowed in the query string component of the HTTP request. 256 = 0.256KB
+    Default: 256
+  # MaxExpectedHeaderIdAplicacion:
+  #   Type: Number
+  #   Description: Maximum number of bytes allowed in the header x-id-aplicacion. 16 = 0.016KB
+  #   Default: 16
+  # MaxExpectedHeaderModulo:
+  #   Type: Number
+  #   Description: Maximum number of bytes allowed in the header x-modulo. 9 = 0.009KB
+  #   Default: 9
+  # MaxExpectedHeaderIdUsuario:
+  #   Type: Number
+  #   Description: Maximum number of bytes allowed in the header x-id-usuario. 20 = 0.020KB
+  #   Default: 20
+  MaxExpectedHeaderAuthorization:
+    Type: Number
+    Description: Maximum number of bytes allowed in the header authorization. 1900 = 1.9KB
+    Default: 1900
+
+  MaxExpectedHeaderCSRF:
+    Type: Number
+    Description: Maximum number of bytes allowed in the header CSRF x-csrf-token. 36 = 0.036KB
+    Default: 37
+
+  ## black list ip set
+  EnabledHttpFloodProtectionRateBasedRule:
+    Description: DDoS Basic
+    Type: String
+    Default: 'YES'
+    AllowedValues: [ 'YES','NO' ]
+  BlockFromIpHttpflood:
+    Description: block requests from IPs that are detected as suspected of an http flood attack
+    Type: String
+    Default: 'YES'
+    AllowedValues: [ 'YES','NO' ]
+  BlockFromIpScannersProbes:
+    Description: block IP address requests that are detected as suspected of a SCANNER PROBE attack
+    Type: String
+    Default: 'YES'
+    AllowedValues: [ 'YES','NO' ]
+  ## White list ip set
+  AllowFromIpHttpflood:
+    Description: allow requests from IPs
+    Type: String
+    Default: 'YES'
+    AllowedValues: [ 'YES','NO' ]
+  AllowIpsV4:
+    Description: Allow Ips v4
+    Type: String
+  AllowIpsV6:
+    Description: Allow Ips v6
+    Type: String
+
+  EndpointType:
+    Type: String
+    Default: 'CloudFront'
+    AllowedValues:
+      - 'CloudFront'
+      - 'ALB'
+      - 'APIGATEWAY'
+  RequestThreshold:
+    Type: Number
+    Description: Amount of allowed request per IP and token
+    Default: 200
+Conditions:
+  BlockDefaulAction: !Equals
+    - !Ref DefaultAction
+    - 'BLOCK'
+  HasEnableSQLInjectionProtection: !Equals
+    - !Ref EnableSQLInjectionProtection
+    - 'YES'
+  HasEnableXSSInjectionProtection: !Equals
+    - !Ref EnableXSSInjectionProtection
+    - 'YES'
+  HasEnableSizeRestrinction: !Equals
+    - !Ref EnableSizeRestrinction
+    - 'YES'
+  HasEnableCrossSiteRequestForgery: !Equals
+    - !Ref EnableCrossSiteRequestForgery
+    - 'YES'
+  HasEnableBlockRfiLfi: !Equals
+    - !Ref EnableBlockRfiLfi
+    - 'YES'
+  HasEnableBlockSpringBootEndpoint: !Equals
+    - !Ref EnableBlockSpringBootEndpoint
+    - 'YES'
+  HasElbStack: !Not
+    - !Equals
+      - !Ref ElbStack
+      - ''
+  HasApiGatewayStack: !Not
+    - !Equals
+      - !Ref ApiGatewayStack
+      - ''
+  # HasEcsStackOrApiGatewayStack: !Or [ !Condition HasEcsStack, !Condition HasApiGatewayStack ]
+  # HasAutomationsResourcesPrefix: !Not
+  #   - !Equals
+  #     - !Ref EcsStack
+  #     - ''
+  HasEnabledHttpFloodProtectionRateBasedRule: !Equals
+    - !Ref EnabledHttpFloodProtectionRateBasedRule
+    - 'YES'
+  HasBlockFromIpHttpflood: !Equals
+    - !Ref BlockFromIpHttpflood
+    - 'YES'
+  HasBlockFromIpScannersProbes: !Equals
+    - !Ref BlockFromIpScannersProbes
+    - 'YES'
+  HasAllowFromIpHttpflood: !Equals
+    - !Ref AllowFromIpHttpflood
+    - 'YES'
+#  ResourceEnpoint: !Equals
+#    - !Ref EndpointType
+#    - 'ALB'
+  AlbEndpoint: !Equals
+    - !Ref EndpointType
+    - 'ALB'
+    #ResourceEndpoint
+  ResourceEnpoint: !Or
+    - !Equals
+      - !Ref EndpointType
+      - 'ALB'
+    - !Equals
+      - !Ref EndpointType
+      - 'APIGATEWAY'
+
+Resources:
+
+  Waf:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub
+        - '${PREFIX}-WAF-${StackNumber}-${WafName}'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      DefaultAction:
+        !If
+          - BlockDefaulAction
+          - Block: {}
+          - Allow: { }
+      Scope: !If [ResourceEnpoint, 'REGIONAL', 'CLOUDFRONT']
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub
+          - '${COID}${ASSETID}${APID}${SID}WAF00'
+          - COID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-COID'
+            ASSETID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-ASSETID'
+            APID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-APID'
+            SID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-SID'
+      Rules:
+        - !If
+          - HasEnableSQLInjectionProtection
+          - Name: SQLInjection
+            Priority: 0
+            Statement:
+              RuleGroupReferenceStatement:
+                ARN: !GetAtt SqlInjectionRuleGroup.Arn
+            OverrideAction:
+              None: { }
+            VisibilityConfig:
+              SampledRequestsEnabled: true
+              CloudWatchMetricsEnabled: true
+              MetricName: SQLInjection
+          - !Ref AWS::NoValue
+        - !If
+          - HasEnableXSSInjectionProtection
+          - Name: XSSInjection
+            Priority: 1
+            Statement:
+              RuleGroupReferenceStatement:
+                ARN: !GetAtt XSSInjectionRuleGroup.Arn
+            OverrideAction:
+              None: { }
+            VisibilityConfig:
+              SampledRequestsEnabled: true
+              CloudWatchMetricsEnabled: true
+              MetricName: XSSInjection
+          - !Ref AWS::NoValue
+        - !If
+          - HasEnableSizeRestrinction
+          - Name: SizeRestrictions
+            Priority: 2
+            Statement:
+              RuleGroupReferenceStatement:
+                ARN: !GetAtt SizeRestrictionsRuleGroup.Arn
+            OverrideAction:
+              None: { }
+            VisibilityConfig:
+              SampledRequestsEnabled: true
+              CloudWatchMetricsEnabled: true
+              MetricName: SizeRestrictions
+          - !Ref AWS::NoValue
+        - !If
+          - HasEnableBlockRfiLfi
+          - Name: RfiLfiRestrictions
+            Priority: 3
+            Statement:
+              RuleGroupReferenceStatement:
+                ARN: !GetAtt RfiLfiRuleGroup.Arn
+            OverrideAction:
+              None: { }
+            VisibilityConfig:
+              SampledRequestsEnabled: true
+              CloudWatchMetricsEnabled: true
+              MetricName: RfiLfiRestrictions
+          - !Ref AWS::NoValue
+        - !If
+          - HasEnableBlockSpringBootEndpoint
+          - Name: SpringBootEndpointRestrictions
+            Priority: 4
+            Statement:
+              RuleGroupReferenceStatement:
+                ARN: !GetAtt BlockSpringBootEndpointRuleGroup.Arn
+            OverrideAction:
+              None: { }
+            VisibilityConfig:
+              SampledRequestsEnabled: true
+              CloudWatchMetricsEnabled: true
+              MetricName: SpringBootEndpointRestrictions
+          - !Ref AWS::NoValue
+        - !If
+          - HasEnableCrossSiteRequestForgery
+          - Name: CSRFRestrictions
+            Priority: 5
+            Statement:
+              RuleGroupReferenceStatement:
+                ARN: !GetAtt CSRFRestrictionsRuleGroup.Arn
+            OverrideAction:
+              None: { }
+            VisibilityConfig:
+              SampledRequestsEnabled: true
+              CloudWatchMetricsEnabled: true
+              MetricName: CSRFRestrictions
+          - !Ref AWS::NoValue
+        - !If
+          - HasBlockFromIpHttpflood
+          - Name: HttpFloodRegularRule
+            Priority: 6
+            Action:
+              Block: { }
+            VisibilityConfig:
+              SampledRequestsEnabled: true
+              CloudWatchMetricsEnabled: true
+              MetricName: !Sub
+                - '${COID}${ASSETID}${APID}${SID}WAF00HttpFloodRegularRule'
+                - COID:
+                    'Fn::ImportValue': !Sub '${EnvironmentStack}-COID'
+                  ASSETID:
+                    'Fn::ImportValue': !Sub '${EnvironmentStack}-ASSETID'
+                  APID:
+                    'Fn::ImportValue': !Sub '${EnvironmentStack}-APID'
+                  SID:
+                    'Fn::ImportValue': !Sub '${EnvironmentStack}-SID'
+            Statement:
+              OrStatement:
+                Statements:
+                  - IPSetReferenceStatement:
+                      Arn: !GetAtt WAFHttpFloodSetV4.Arn
+                  - IPSetReferenceStatement:
+                      Arn: !GetAtt WAFHttpFloodSetV6.Arn
+          - !Ref 'AWS::NoValue'
+        - !If
+          - HasBlockFromIpScannersProbes
+          - Name: 'ScannersAndProbesRule'
+            Priority: 7
+            Action:
+              Block: { }
+            VisibilityConfig:
+              SampledRequestsEnabled: true
+              CloudWatchMetricsEnabled: true
+              MetricName: !Sub
+                - '${COID}${ASSETID}${APID}${SID}WAF00ScannersAndProbesRule'
+                - COID:
+                    'Fn::ImportValue': !Sub '${EnvironmentStack}-COID'
+                  ASSETID:
+                    'Fn::ImportValue': !Sub '${EnvironmentStack}-ASSETID'
+                  APID:
+                    'Fn::ImportValue': !Sub '${EnvironmentStack}-APID'
+                  SID:
+                    'Fn::ImportValue': !Sub '${EnvironmentStack}-SID'
+            Statement:
+              OrStatement:
+                Statements:
+                  - IPSetReferenceStatement:
+                      Arn: !GetAtt WAFScannersProbesSetV4.Arn
+                  - IPSetReferenceStatement:
+                      Arn: !GetAtt WAFScannersProbesSetV6.Arn
+          - !Ref 'AWS::NoValue'
+        - !If
+          - HasAllowFromIpHttpflood
+          - Name: AllowHttpFloodRegularRule
+            Priority: 8
+            Action:
+              Allow: { }
+            VisibilityConfig:
+              SampledRequestsEnabled: true
+              CloudWatchMetricsEnabled: true
+              MetricName: !Sub
+                - '${COID}${ASSETID}${APID}${SID}AllowWAF00HttpFloodRegularRule'
+                - COID:
+                    'Fn::ImportValue': !Sub '${EnvironmentStack}-COID'
+                  ASSETID:
+                    'Fn::ImportValue': !Sub '${EnvironmentStack}-ASSETID'
+                  APID:
+                    'Fn::ImportValue': !Sub '${EnvironmentStack}-APID'
+                  SID:
+                    'Fn::ImportValue': !Sub '${EnvironmentStack}-SID'
+            Statement:
+              OrStatement:
+                Statements:
+                  - IPSetReferenceStatement:
+                      Arn: !GetAtt AllowWAFHttpFloodSetV4.Arn
+                  - IPSetReferenceStatement:
+                      Arn: !GetAtt AllowWAFHttpFloodSetV6.Arn
+          - !Ref 'AWS::NoValue'
+        - !If
+          - HasEnabledHttpFloodProtectionRateBasedRule
+          - Name: HttpFloodRateBasedRule
+            Priority: 9
+            Action:
+              Block: {}
+            VisibilityConfig:
+              SampledRequestsEnabled: true
+              CloudWatchMetricsEnabled: true
+              MetricName: !Sub
+                - '${COID}${ASSETID}${APID}${SID}WAF00HttpFloodRateBasedRule'
+                - COID:
+                    'Fn::ImportValue': !Sub '${EnvironmentStack}-COID'
+                  ASSETID:
+                    'Fn::ImportValue': !Sub '${EnvironmentStack}-ASSETID'
+                  APID:
+                    'Fn::ImportValue': !Sub '${EnvironmentStack}-APID'
+                  SID:
+                    'Fn::ImportValue': !Sub '${EnvironmentStack}-SID'
+            Statement:
+              RateBasedStatement:
+                AggregateKeyType: "IP"
+                Limit: !Ref RequestThreshold
+          - !Ref 'AWS::NoValue'
+  WafAssociationAlb:
+    Condition: HasElbStack
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn: !ImportValue
+        'Fn::Sub': '${ElbStack}-LoadBalancerArn'
+      WebACLArn: !GetAtt Waf.Arn
+  WafAssociationApiGateway:
+    Condition: HasApiGatewayStack
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn: !ImportValue
+        'Fn::Sub': '${ApiGatewayStack}-ApiGatewayArn'
+      WebACLArn: !GetAtt Waf.Arn
+
+  ## Mitigate SQL Injection Attacks
+  ## Matches attempted SQLi patterns in the URI, QUERY_STRING, BODY, COOKIES
+
+  SqlInjectionRuleGroup:
+    Type: AWS::WAFv2::RuleGroup
+    Condition: HasEnableSQLInjectionProtection
+    Properties:
+      Scope: REGIONAL
+      Capacity: 60
+      Name: !Sub
+        - '${PREFIX}-WAF-${StackNumber}-SQLI-GROUP'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      VisibilityConfig:
+        MetricName: !Sub
+          - '${COID}${ASSETID}${APID}${SID}WAF00SqlInjectionGroup'
+          - COID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-COID'
+            ASSETID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-ASSETID'
+            APID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-APID'
+            SID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-SID'
+        CloudWatchMetricsEnabled: true
+        SampledRequestsEnabled: true
+      Rules:
+        - Name: SQLInjectRule
+          Priority: 0
+          Action:
+            Block: { }
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: SQLInjectRule
+          Statement:
+            OrStatement:
+              Statements:
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      QueryString: { }
+                    TextTransformations:
+                      - Type: URL_DECODE
+                        Priority: 0
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      UriPath: { }
+                    TextTransformations:
+                      - Type: URL_DECODE
+                        Priority: 0
+
+  ## Mitigate Cross Site Scripting Attacks
+  ## Matches attempted XSS patterns in the URI, QUERY_STRING, BODY, COOKIES
+  XSSInjectionRuleGroup:
+    Type: AWS::WAFv2::RuleGroup
+    Condition: HasEnableXSSInjectionProtection
+    Properties:
+      Scope: REGIONAL
+      Capacity: 120
+      Name:  !Sub
+        - '${PREFIX}-WAF-${StackNumber}-XSSI-GROUP'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      VisibilityConfig:
+        MetricName: !Sub
+          - '${COID}${ASSETID}${APID}${SID}WAF00XssInjectionGroup'
+          - COID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-COID'
+            ASSETID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-ASSETID'
+            APID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-APID'
+            SID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-SID'
+        CloudWatchMetricsEnabled: true
+        SampledRequestsEnabled: true
+      Rules:
+        - Name: SQLInjectRule
+          Priority: 0
+          Action:
+            Block: { }
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: SQLInjectRule
+          Statement:
+            OrStatement:
+              Statements:
+                - XssMatchStatement:
+                    FieldToMatch:
+                      QueryString: { }
+                    TextTransformations:
+                      - Type: URL_DECODE
+                        Priority: 0
+                      - Type: HTML_ENTITY_DECODE
+                        Priority: 1
+                - XssMatchStatement:
+                    FieldToMatch:
+                      Body: { }
+                    TextTransformations:
+                      - Type: URL_DECODE
+                        Priority: 0
+                      - Type: HTML_ENTITY_DECODE
+                        Priority: 1
+
+  RfiLfiRuleGroup:
+    Type: AWS::WAFv2::RuleGroup
+    Condition: HasEnableBlockRfiLfi
+    Properties:
+      Scope: REGIONAL
+      Capacity: 90
+      Name:  !Sub
+        - '${PREFIX}-WAF-${StackNumber}-RFILFI-GROUP'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      VisibilityConfig:
+        MetricName: !Sub
+          - '${COID}${ASSETID}${APID}${SID}WAF00RfiLfiGroup'
+          - COID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-COID'
+            ASSETID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-ASSETID'
+            APID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-APID'
+            SID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-SID'
+        CloudWatchMetricsEnabled: true
+        SampledRequestsEnabled: true
+      Rules:
+        - Name: RfiLfiRule
+          Priority: 0
+          Action:
+            Block: { }
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RfiLfiRule
+          Statement:
+            OrStatement:
+              Statements:
+                - RegexPatternSetReferenceStatement:
+                    FieldToMatch:
+                      UriPath: { }
+                    ARN: !GetAtt RfiLfiRegexPatternSet.Arn
+                    TextTransformations:
+                      - Type: URL_DECODE
+                        Priority: 0
+                      - Type: HTML_ENTITY_DECODE
+                        Priority: 1
+                - RegexPatternSetReferenceStatement:
+                    FieldToMatch:
+                      QueryString: { }
+                    ARN: !GetAtt RfiLfiRegexPatternSet.Arn
+                    TextTransformations:
+                      - Type: URL_DECODE
+                        Priority: 0
+                      - Type: HTML_ENTITY_DECODE
+                        Priority: 1
+
+  BlockSpringBootEndpointRuleGroup:
+    Type: AWS::WAFv2::RuleGroup
+    Condition: HasEnableBlockSpringBootEndpoint
+    Properties:
+      Scope: REGIONAL
+      Capacity: 35
+      Name: !Sub
+        - '${PREFIX}-WAF-${StackNumber}-SPRBOOT-GROUP'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      VisibilityConfig:
+        MetricName: !Sub
+          - '${COID}${ASSETID}${APID}${SID}WAF00SpringEndpointsGroup'
+          - COID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-COID'
+            ASSETID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-ASSETID'
+            APID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-APID'
+            SID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-SID'
+        CloudWatchMetricsEnabled: true
+        SampledRequestsEnabled: true
+      Rules:
+        - Name: SpringBootEndpointRule
+          Priority: 0
+          Action:
+            Block: { }
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: SpringBootEndpointRule
+          Statement:
+            RegexPatternSetReferenceStatement:
+              FieldToMatch:
+                UriPath: { }
+              ARN: !GetAtt SpringBootEndpointPatternSet.Arn
+              TextTransformations:
+                - Type: URL_DECODE
+                  Priority: 0
+
+  ## Mitigate abnormal requests via size restrictions
+  ## Enforce consistent request hygene, limit size of key elements
+  SizeRestrictionsRuleGroup:
+    Type: AWS::WAFv2::RuleGroup
+    Condition: HasEnableSizeRestrinction
+    Properties:
+      Scope: REGIONAL
+      Capacity: 7
+      Name: !Sub
+        - '${PREFIX}-WAF-${StackNumber}-SIZE-GROUP'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      VisibilityConfig:
+        MetricName: !Sub
+          - '${COID}${ASSETID}${APID}${SID}WAF00SizeRestrictionsGroup'
+          - COID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-COID'
+            ASSETID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-ASSETID'
+            APID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-APID'
+            SID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-SID'
+        CloudWatchMetricsEnabled: true
+        SampledRequestsEnabled: true
+      Rules:
+        - Name: SizeRestrictions
+          Priority: 0
+          Action:
+            Block: { }
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: SizeRestrictions
+          Statement:
+            OrStatement:
+              Statements:
+                - SizeConstraintStatement:
+                    FieldToMatch:
+                      UriPath: { }
+                    ComparisonOperator: GT
+                    Size: !Ref MaxExpectedURISize
+                    TextTransformations:
+                      - Type: NONE
+                        Priority: 0
+                - SizeConstraintStatement:
+                    FieldToMatch:
+                      QueryString: { }
+                    ComparisonOperator: GT
+                    Size: !Ref MaxExpectedQueryStringSize
+                    TextTransformations:
+                      - Type: NONE
+                        Priority: 0
+                - SizeConstraintStatement:
+                    FieldToMatch:
+                      Body: { }
+                    ComparisonOperator: GT
+                    Size: !Ref MaxExpectedBodySize
+                    TextTransformations:
+                      - Type: NONE
+                        Priority: 0
+                # - SizeConstraintStatement:
+                #     FieldToMatch:
+                #       SingleHeader: { "Name": "x-id-aplicacion" }
+                #     ComparisonOperator: GT
+                #     Size: !Ref MaxExpectedHeaderIdAplicacion
+                #     TextTransformations:
+                #       - Type: NONE
+                #         Priority: 0
+                # - SizeConstraintStatement:
+                #     FieldToMatch:
+                #       SingleHeader: { "Name": "x-modulo" }
+                #     ComparisonOperator: GT
+                #     Size: !Ref MaxExpectedHeaderModulo
+                #     TextTransformations:
+                #       - Type: NONE
+                #         Priority: 0
+                # - SizeConstraintStatement:
+                #     FieldToMatch:
+                #       SingleHeader: { "Name": "x-id-usuario" }
+                #     ComparisonOperator: GT
+                #     Size: !Ref MaxExpectedHeaderIdUsuario
+                #     TextTransformations:
+                #       - Type: NONE
+                #         Priority: 0
+                - SizeConstraintStatement:
+                    FieldToMatch:
+                      SingleHeader: { "Name": "Authorization" }
+                    ComparisonOperator: GT
+                    Size: !Ref MaxExpectedHeaderAuthorization
+                    TextTransformations:
+                      - Type: NONE
+                        Priority: 0
+
+  RfiLfiRegexPatternSet:
+    Type: AWS::WAFv2::RegexPatternSet
+    Condition: HasEnableBlockRfiLfi
+    Properties:
+      Name: !Sub
+        - '${PREFIX}-WAF-${StackNumber}-RFILFI-RGXPTRN'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      RegularExpressionList:
+        - '.*(\:\/\/).*'
+        - '.*(\.\.\/).*'
+      Scope: REGIONAL
+
+  SpringBootEndpointPatternSet:
+    Type: AWS::WAFv2::RegexPatternSet
+    Condition: HasEnableBlockSpringBootEndpoint
+    Properties:
+      Name: !Sub
+        - '${PREFIX}-WAF-${StackNumber}-SPRENP-RGXPTRN'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      RegularExpressionList:
+        - '(\/actuator){0,1}\/env'
+        - '(\/actuator){0,1}\/trace'
+        - '(\/actuator){0,1}\/health'
+        - '(\/actuator){0,1}\/beans'
+        - '(\/actuator){0,1}\/httptrace'
+        - '(\/actuator){0,1}\/metrics'
+        - '(\/actuator){0,1}\/sessions'
+        - '(\/actuator){0,1}\/shutdown'
+      Scope: REGIONAL
+
+  CSRFRestrictionsRuleGroup:
+    Type: AWS::WAFv2::RuleGroup
+    Condition: HasEnableCrossSiteRequestForgery
+    Properties:
+      Scope: REGIONAL
+      Capacity: 13
+      Name: !Sub
+        - '${PREFIX}-WAF-${StackNumber}-CSRF-GROUP'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      VisibilityConfig:
+        MetricName: !Sub
+          - '${COID}${ASSETID}${APID}${SID}WAF00CSRFRestrictionsGroup'
+          - COID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-COID'
+            ASSETID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-ASSETID'
+            APID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-APID'
+            SID:
+              'Fn::ImportValue': !Sub '${EnvironmentStack}-SID'
+        CloudWatchMetricsEnabled: true
+        SampledRequestsEnabled: true
+      Rules:
+        - Name: SizeRestrictions
+          Priority: 0
+          Action:
+            Block: { }
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: SizeRestrictions
+          Statement:
+            AndStatement:
+              Statements:
+                - SizeConstraintStatement:
+                    FieldToMatch:
+                      SingleHeader: { "Name": "x-csrf-token" }
+                    ComparisonOperator: EQ
+                    Size: !Ref MaxExpectedHeaderCSRF
+                    TextTransformations:
+                      - Type: NONE
+                        Priority: 0
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      Method: { }
+                    PositionalConstraint: EXACTLY
+                    SearchString: post
+                    TextTransformations:
+                      - Type: LOWERCASE
+                        Priority: 0
+
+  # IpSets
+  WAFHttpFloodSetV4:
+    Type: 'AWS::WAFv2::IPSet'
+    Condition: HasBlockFromIpHttpflood
+    Properties:
+      Scope: !If [ResourceEnpoint, 'REGIONAL', 'CLOUDFRONT']
+      IPAddressVersion: 'IPV4'
+      Name: !Sub
+        - '${PREFIX}-SETIPV4-${StackNumber}-HTTPFlood'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Description: 'Block HTTP Flood IPV4 addresses'
+      Addresses: [ ]
+  WAFHttpFloodSetV6:
+    Type: 'AWS::WAFv2::IPSet'
+    Condition: HasBlockFromIpHttpflood
+    Properties:
+      Scope: !If [ResourceEnpoint, 'REGIONAL', 'CLOUDFRONT']
+      IPAddressVersion: IPV6
+      Name: !Sub
+        - '${PREFIX}-SETIPV6-${StackNumber}-HTTPFlood'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Description: 'Block HTTP Flood IPV6 addresses'
+      Addresses: [ ]
+  AllowWAFHttpFloodSetV4:
+    Type: 'AWS::WAFv2::IPSet'
+    Condition: HasAllowFromIpHttpflood
+    Properties:
+      Scope: !If [ResourceEnpoint, 'REGIONAL', 'CLOUDFRONT']
+      IPAddressVersion: 'IPV4'
+      Name: !Sub
+        - '${PREFIX}-SETIPV4-${StackNumber}-HTTPFlood-Allow'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Description: 'Allow HTTP Flood IPV4 addresses'
+      Addresses: !Split [",", !Ref AllowIpsV4]
+  AllowWAFHttpFloodSetV6:
+    Type: 'AWS::WAFv2::IPSet'
+    Condition: HasAllowFromIpHttpflood
+    Properties:
+      Scope: !If [ResourceEnpoint, 'REGIONAL', 'CLOUDFRONT']
+      IPAddressVersion: IPV6
+      Name: !Sub
+        - '${PREFIX}-SETIPV6-${StackNumber}-HTTPFlood-Allow'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Description: 'Allow HTTP Flood IPV6 addresses'
+      Addresses: !Split [",", !Ref AllowIpsV6]
+
+  WAFScannersProbesSetV4:
+    Type: 'AWS::WAFv2::IPSet'
+    Condition: HasBlockFromIpScannersProbes
+    Properties:
+      Scope: !If [ResourceEnpoint, 'REGIONAL', 'CLOUDFRONT']
+      IPAddressVersion: 'IPV4'
+      Name: !Sub
+        - '${PREFIX}-SETIPV4-${StackNumber}-ScannersProbes'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Description: 'Block Scanners/Probes IPV4 addresses'
+      Addresses: [ ]
+  WAFScannersProbesSetV6:
+    Type: 'AWS::WAFv2::IPSet'
+    Condition: HasBlockFromIpScannersProbes
+    Properties:
+      Scope: !If [ResourceEnpoint, 'REGIONAL', 'CLOUDFRONT']
+      IPAddressVersion: IPV6
+      Name: !Sub
+        - '${PREFIX}-SETIPV6-${StackNumber}-ScannersProbes'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Description: 'Block Scanners/Probes IPV6 addresses'
+      Addresses: [ ]
+Outputs:
+  StackName:
+    Description: Stack name.
+    Value: !Sub '${AWS::StackName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-StackName'
+  WebACLArn:
+    Value: !GetAtt Waf.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-WebACLArn'
+  WebACLId:
+    Value: !GetAtt Waf.Id
+    Export:
+      Name: !Sub '${AWS::StackName}-WebACLId'
+  WAFHttpFloodSetV4Arn:
+    Condition: HasBlockFromIpHttpflood
+    Value: !GetAtt WAFHttpFloodSetV4.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-WAFHttpFloodSetV4Arn'
+  NameHttpFloodSetV4:
+    Condition: HasBlockFromIpHttpflood
+    Value: !Sub
+        - '${PREFIX}-SETIPV4-${StackNumber}-HTTPFlood'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+    Export:
+      Name: !Sub '${AWS::StackName}-NameHttpFloodSetV4'
+  WAFHttpFloodSetV6Arn:
+    Condition: HasBlockFromIpHttpflood
+    Value: !GetAtt WAFHttpFloodSetV6.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-WAFHttpFloodSetV6Arn'
+  NameHttpFloodSetV6:
+    Condition: HasBlockFromIpHttpflood
+    Value: !Sub
+        - '${PREFIX}-SETIPV6-${StackNumber}-HTTPFlood'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+    Export:
+      Name: !Sub '${AWS::StackName}-NameHttpFloodSetV6'
+  AllowWAFHttpFloodSetV4Arn:
+    Condition: HasAllowFromIpHttpflood
+    Value: !GetAtt AllowWAFHttpFloodSetV4.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-AllowWAFHttpFloodSetV4Arn'
+  NameAllowHttpFloodSetV4:
+    Condition: HasAllowFromIpHttpflood
+    Value: !Sub
+        - '${PREFIX}-SETIPV4-${StackNumber}-HTTPFlood-Allow'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+    Export:
+      Name: !Sub '${AWS::StackName}-NameAllowHttpFloodSetV4'
+  AllowWAFHttpFloodSetV6Arn:
+    Condition: HasAllowFromIpHttpflood
+    Value: !GetAtt AllowWAFHttpFloodSetV6.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-AllowWAFHttpFloodSetV6Arn'
+  NameAllowHttpFloodSetV6:
+    Condition: HasAllowFromIpHttpflood
+    Value: !Sub
+        - '${PREFIX}-SETIPV6-${StackNumber}-HTTPFlood-Allow'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+    Export:
+      Name: !Sub '${AWS::StackName}-NameHttpFloodSetV6'
+  WAFScannersProbesSetV4Arn:
+    Condition: HasBlockFromIpScannersProbes
+    Value: !GetAtt WAFScannersProbesSetV4.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-WAFScannersProbesSetV4Arn'
+  NameScannersProbesSetV4:
+    Condition: HasBlockFromIpScannersProbes
+    Value: !Sub
+        - '${PREFIX}-SETIPV4-${StackNumber}-ScannersProbes'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+    Export:
+      Name: !Sub '${AWS::StackName}-NameScannersProbesSetV4'
+  WAFScannersProbesSetV6Arn:
+    Condition: HasBlockFromIpScannersProbes
+    Value: !GetAtt WAFScannersProbesSetV6.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-WAFScannersProbesSetV6Arn'
+  NameScannersProbesSetV6:
+    Condition: HasBlockFromIpScannersProbes
+    Value: !Sub
+        - '${PREFIX}-SETIPV6-${StackNumber}-ScannersProbes'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+    Export:
+      Name: !Sub '${AWS::StackName}-NameScannersProbesSetV6'
+
+
+
+

@@ -1,0 +1,259 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Operations: Alert topic, a applying.pe template'
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Alert Parameters
+        Parameters:
+          - Email
+          - HttpEndpoint
+          - HttpsEndpoint
+      - Label:
+          default: Fallback Parameters
+        Parameters:
+          - FallbackEmail
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  EnvironmentStack:
+    Description: "Required the name of the environment Stack"
+    Type: String
+  Email:
+    Description: Optional email address that will receive alerts.
+    Type: String
+    Default: ''
+  HttpEndpoint:
+    Description: Optional HTTP endpoint that will receive alerts via POST requests.
+    Type: String
+    Default: ''
+  HttpsEndpoint:
+    Description: Optional HTTPS endpoint that will receive alerts via POST requests
+      (e.g., a marbot.io endpoint for incident management in Slack).
+    Type: String
+    Default: ''
+  WithFallbackTopic:
+    Type: String
+    AllowedValues: [ "YES","NO" ]
+    Default: 'YES'
+  FallbackEmail:
+    Description: Optional email address that will receive alerts if alerts can not
+      be delivered.
+    Type: String
+    Default: ''
+Conditions:
+  HasEmail:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: Email
+          - ''
+  HasHttpEndpoint:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: HttpEndpoint
+          - ''
+  HasHttpsEndpoint:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: HttpsEndpoint
+          - ''
+  HasHttpsEndpoint:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: HttpsEndpoint
+          - ''
+  HasFallbackEmail:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: FallbackEmail
+          - ''
+Resources:
+  Topic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName:
+        Fn::Sub:
+          - ${COID}-${ASSETID}-${APID}-${SID}-SNS-00-NOTIFICATION
+          - COID:
+              Fn::ImportValue:
+                Fn::Sub: ${BaseStack}-COID
+            ASSETID:
+              Fn::ImportValue:
+                Fn::Sub: ${BaseStack}-ASSETID
+            APID:
+              Fn::ImportValue:
+                Fn::Sub: ${BaseStack}-APID
+            SID:
+              Fn::ImportValue:
+                Fn::Sub: ${BaseStack}-SID
+  TopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Id: Id1
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Sid1
+            Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+                - budgets.amazonaws.com
+                - rds.amazonaws.com
+                - s3.amazonaws.com
+                - backup.amazonaws.com
+                - codestar-notifications.amazonaws.com
+            Action: sns:Publish
+            Resource:
+              Ref: Topic
+          - Sid: Sid2
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action: sns:Publish
+            Resource:
+              Ref: Topic
+            Condition:
+              StringEquals:
+                AWS:SourceOwner:
+                  Ref: AWS::AccountId
+          - Sid: Sid3
+            Effect: Allow
+            Principal:
+              Service: ses.amazonaws.com
+            Action: sns:Publish
+            Resource:
+              Ref: Topic
+            Condition:
+              StringEquals:
+                AWS:Referer:
+                  Ref: AWS::AccountId
+      Topics:
+        - Ref: Topic
+  FallbackTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName:
+        Fn::Sub:
+          - ${COID}-${ASSETID}-${APID}-${SID}-SNS-00-NOTIFICATIONFAILED
+          - COID:
+              Fn::ImportValue:
+                Fn::Sub: ${BaseStack}-COID
+            ASSETID:
+              Fn::ImportValue:
+                Fn::Sub: ${BaseStack}-ASSETID
+            APID:
+              Fn::ImportValue:
+                Fn::Sub: ${BaseStack}-APID
+            SID:
+              Fn::ImportValue:
+                Fn::Sub: ${BaseStack}-SID
+  NumberOfNotificationsFailedTooHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName:
+        Fn::Sub:
+          - ${COID}-${ASSETID}-${APID}-${SID}-SNS-00-NOTIFICATIONFAILED-ALARM
+          - COID:
+              Fn::ImportValue:
+                Fn::Sub: ${BaseStack}-COID
+            ASSETID:
+              Fn::ImportValue:
+                Fn::Sub: ${BaseStack}-ASSETID
+            APID:
+              Fn::ImportValue:
+                Fn::Sub: ${BaseStack}-APID
+            SID:
+              Fn::ImportValue:
+                Fn::Sub: ${BaseStack}-SID
+      AlarmDescription: Alerts could not be delivered
+      Namespace: AWS/SNS
+      MetricName: NumberOfNotificationsFailed
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+        - Ref: FallbackTopic
+      Dimensions:
+        - Name: TopicName
+          Value:
+            Fn::GetAtt:
+              - Topic
+              - TopicName
+      TreatMissingData: notBreaching
+  EmailSubscription:
+    Condition: HasEmail
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint:
+        Ref: Email
+      Protocol: email
+      TopicArn:
+        Ref: Topic
+  HttpEndpointSubscription:
+    Condition: HasHttpEndpoint
+    Type: AWS::SNS::Subscription
+    Properties:
+      DeliveryPolicy:
+        healthyRetryPolicy:
+          minDelayTarget: 1
+          maxDelayTarget: 60
+          numRetries: 100
+          numNoDelayRetries: 0
+          backoffFunction: exponential
+        throttlePolicy:
+          maxReceivesPerSecond: 1
+      Endpoint:
+        Ref: HttpEndpoint
+      Protocol: http
+      TopicArn:
+        Ref: Topic
+  HttpsEndpointSubscription:
+    Condition: HasHttpsEndpoint
+    Type: AWS::SNS::Subscription
+    Properties:
+      DeliveryPolicy:
+        healthyRetryPolicy:
+          minDelayTarget: 1
+          maxDelayTarget: 60
+          numRetries: 100
+          numNoDelayRetries: 0
+          backoffFunction: exponential
+        throttlePolicy:
+          maxReceivesPerSecond: 1
+      Endpoint:
+        Ref: HttpsEndpoint
+      Protocol: https
+      TopicArn:
+        Ref: Topic
+  FallbackEmailSubscription:
+    Condition: HasFallbackEmail
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint:
+        Ref: FallbackEmail
+      Protocol: email
+      TopicArn:
+        Ref: FallbackTopic
+Outputs:
+  TemplateID:
+    Description: cloudonaut.io template id.
+    Value: operations/alert
+  TemplateVersion:
+    Description: cloudonaut.io template version.
+    Value: 12.6.0
+  StackName:
+    Description: Stack name.
+    Value:
+      Fn::Sub: ${AWS::StackName}
+  TopicARN:
+    Description: The ARN of the alert topic.
+    Value:
+      Ref: Topic
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-TopicARN

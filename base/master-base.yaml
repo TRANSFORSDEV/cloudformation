@@ -1,0 +1,126 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: This template creates a Key in KMS, a base bucket S3 and a topic SNS for suport notification.
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Environment Configuration
+        Parameters:
+          - StackNumber
+          - ENV
+          - COID
+          - APID
+          - ASSETID
+          - SID
+      - Label:
+          default: Support Configuration
+        Parameters:
+          - SupportEmail
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  COID:
+    Type: String
+    Description: COID
+  ASSETID:
+    Type: String
+    Description: ASSETID
+  APID:
+    Type: String
+    Description: APID
+  ENV:
+    Description: Nombre del ambiente
+    Type: String
+  SID:
+    Type: String
+    Description: SID
+  SupportEmail:
+    Type: String
+    Description: Email to send support notificacion for this stack
+    Default: ''
+Conditions:
+  HasSuportEmail: !Not [ !Equals [ !Ref SupportEmail, '' ] ]
+Resources:
+  EnvironmentStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../lib/templates/environment-stack.yaml
+      Parameters:
+        ENV: !Ref ENV
+        ASSETID: !Ref ASSETID
+        APID: !Ref APID
+        SID: !Ref SID
+        COID: !Ref COID
+  KmsStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../lib/templates/kms/cmk.yaml
+      Parameters:
+        StackNumber: !Ref StackNumber
+        Action: 'CREATE'
+        EnvironmentStack: !GetAtt EnvironmentStack.Outputs.StackName
+        EnableKeyRotation: 'YES'
+  # BucketStack:
+  #   Type: AWS::CloudFormation::Stack
+  #   Properties:
+  #     TemplateURL: ../lib/templates/s3/bucket.yaml
+  #     Parameters:
+  #       StackNumber: !Ref StackNumber
+  #       EnvironmentStack: !GetAtt EnvironmentStack.Outputs.StackName
+  #       KmsStack: !GetAtt KmsStack.Outputs.StackName
+  #       Action: 'CREATE'
+  #       BucketName: 'base'
+  SupportNotificationTopic:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../lib/templates/sns/topic.yaml
+      Parameters:
+        StackNumber: !Ref StackNumber
+        EnvironmentStack: !GetAtt EnvironmentStack.Outputs.StackName
+        TopicName: support-notifications
+        Email: !Ref SupportEmail
+
+Outputs:
+  TemplateID:
+    Description: applying.pe template id.
+    Value: state/environment
+  TemplateVersion:
+    Description: applying.pe template version.
+    Value: 1.1.0
+  StackName:
+    Description: Stack name.
+    Value: !Sub '${AWS::StackName}'
+  EnvironmentStack:
+    Value: !GetAtt EnvironmentStack.Outputs.StackName
+    Export:
+      Name: !Sub '${AWS::StackName}-EnvironmentStack'
+  KmsStack:
+    Value: !GetAtt KmsStack.Outputs.StackName
+    Export:
+      Name: !Sub '${AWS::StackName}-KmsStack'
+  KmsKeyArn:
+    Value: !GetAtt KmsStack.Outputs.KeyArn
+    Export:
+      Name: !Sub '${AWS::StackName}-KmsKeyArn'
+  # BucketStack:
+  #   Value: !GetAtt BucketStack.Outputs.StackName
+  #   Export:
+  #     Name: !Sub '${AWS::StackName}-BucketStack'
+  # BucketName:
+  #   Value: !GetAtt BucketStack.Outputs.BucketName
+  #   Export:
+  #     Name: !Sub '${AWS::StackName}-BucketName'
+  # BucketArn:
+  #   Value: !GetAtt BucketStack.Outputs.BucketArn
+  #   Export:
+  #     Name: !Sub '${AWS::StackName}-BucketArn'
+  SupportTopicStack:
+    Value: !GetAtt SupportNotificationTopic.Outputs.StackName
+    Export:
+      Name: !Sub '${AWS::StackName}-SupportTopicStack'
+  SupportTopicArn:
+    Value: !GetAtt SupportNotificationTopic.Outputs.TopicARN
+    Export:
+      Name: !Sub '${AWS::StackName}-SupportTopicArn'

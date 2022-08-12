@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Static Website: combining S3, CloudFront and Route53'
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+    - Label:
+        default: 'Stack Dependencies'
+      Parameters:
+        - EnvironmentStack        
+    - Label:
+        default: 'SSL/TLS Parameters'
+      Parameters:
+      - Certificate
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  EnvironmentStack:
+    Description: "Required the name of the environment Stack"
+    Type: String
+  S3BucketOriginStack:
+    Description: Stack name of s3 web stack.
+    Type: String
+  DomainName:
+    Type: String
+    Description: Domain name website static
+  HostedZoneId:
+    Type: String
+    Description: Domain name website static  
+  Certificate:
+    Description: 'ACM Certificate ARN. Certificate must be created in the us-east-1 region!'
+    Type: String
+Conditions:
+  HasCertificate: !Not [!Equals [!Ref Certificate, '']]
+Resources:
+  # S3BucketPolicy:
+  #   Type: 'AWS::S3::BucketPolicy'
+  #   Properties:
+  #     Bucket: !Ref S3Bucket
+  #     PolicyDocument:
+  #       Statement:
+  #       - Action: 's3:GetObject'
+  #         Effect: Allow
+  #         Resource: !Sub 'arn:aws:s3:::${S3Bucket}/*'
+  #         Principal:
+  #           CanonicalUser: !GetAtt CloudFrontOriginAccessIdentity.S3CanonicalUserId
+  CloudFrontOriginAccessIdentity:
+    Type: 'AWS::CloudFront::CloudFrontOriginAccessIdentity'
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !ImportValue
+          'Fn::Sub': '${S3BucketOriginStack}-DomainName'
+  CloudFrontDistribution:
+    Type: 'AWS::CloudFront::Distribution'
+    Properties:
+      DistributionConfig:
+        Aliases: 
+          Fn::If:
+          - HasCertificate
+          - 
+            - !Ref DomainName
+          - !Ref AWS::NoValue
+        Comment: !ImportValue
+          'Fn::Sub': '${S3BucketOriginStack}-DomainName'
+        CustomErrorResponses: 
+          # - ErrorCachingMinTTL: 300
+          #   ErrorCode: 400
+          #   ResponseCode: 200
+          #   ResponsePagePath: "/index.html"
+          - ErrorCachingMinTTL: 300
+            ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: "/index.html"
+        DefaultCacheBehavior:
+          AllowedMethods:
+          - GET
+          - HEAD
+          - OPTIONS
+          CachedMethods:
+          - GET
+          - HEAD
+          - OPTIONS
+          Compress: true
+          DefaultTTL: 3600 # in seconds
+          ForwardedValues:
+            Cookies:
+              Forward: none
+            QueryString: false
+          MaxTTL: 86400 # in seconds
+          MinTTL: 60 # in seconds
+          TargetOriginId: !Sub
+            - "S3-origin-${BUCKET_NAME}"
+            - BUCKET_NAME: !ImportValue
+                'Fn::Sub': '${S3BucketOriginStack}-BucketName'
+          ViewerProtocolPolicy: 'redirect-to-https'
+        DefaultRootObject: 'index.html'
+        Enabled: true
+        HttpVersion: http2
+        Origins:
+        - DomainName: !ImportValue
+            'Fn::Sub': '${S3BucketOriginStack}-DomainName'
+          Id: !Sub
+            - "S3-origin-${BUCKET_NAME}"
+            - BUCKET_NAME: !ImportValue
+                'Fn::Sub': '${S3BucketOriginStack}-BucketName'
+          # OriginPath: '/webapp'
+          S3OriginConfig:
+            OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}'
+        ViewerCertificate:
+          Fn::If:
+          - HasCertificate
+          -
+            AcmCertificateArn: !Ref Certificate
+            MinimumProtocolVersion: 'TLSv1.1_2016'
+            SslSupportMethod: 'sni-only'
+          - !Ref AWS::NoValue
+  RecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2
+        DNSName: !GetAtt 'CloudFrontDistribution.DomainName'
+Outputs:
+  StackName:
+    Description: 'Stack name.'
+    Value: !Sub '${AWS::StackName}'    
+  URL:
+    Description: 'URL to static website.'
+    Value: !GetAtt 'CloudFrontDistribution.DomainName'
+    Export:
+      Name: !Sub '${AWS::StackName}-URL'
+  DistributionId:
+    Description: 'CloudFront distribution id'
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: !Sub '${AWS::StackName}-DistributionId'
+  CloudFrontIdentity:
+    Value: !Ref CloudFrontOriginAccessIdentity
+    Export:
+      Name: !Sub '${AWS::StackName}-CloudFrontIdentity'

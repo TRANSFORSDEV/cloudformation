@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'State: Environment Client, a applying.pe template'
+Parameters:
+  ENV:
+    Description: Nombre del ambiente
+    Type: String
+  ASSETID:
+    Type: String
+    Description: ASSETID
+  APID:
+    Type: String
+    Description: APID
+  SID:
+    Type: String
+    Description: SID
+  COID:
+    Type: String
+    Description: COID
+Conditions:
+  HasNot:
+    Fn::Equals: [ 'a', 'b' ]
+Resources:
+  NullResource:
+    Type: 'Custom::NullResource'
+    Condition: HasNot
+    Properties:
+      ServiceToken: !Ref AWS::NoValue
+Outputs:
+  TemplateID:
+    Description: applying.pe template id.
+    Value: state/environment
+  TemplateVersion:
+    Description: applying.pe template version.
+    Value: 1.0.0
+  StackName:
+    Description: Stack name.
+    Value: !Sub '${AWS::StackName}'
+  ENV:
+    Description: ENV
+    Value: !Ref ENV
+    Export:
+      Name: !Sub '${AWS::StackName}-ENV'
+  ENVLower:
+    Description: ENV lower
+    Value:
+      'Fn::Transform':
+        Name: 'String'
+        Parameters:
+          InputString: !Ref ENV
+          Operation: Lower
+    Export:
+      Name: !Sub '${AWS::StackName}-ENVLower'
+  COID:
+    Description: COID
+    Value: !Ref COID
+    Export:
+      Name: !Sub '${AWS::StackName}-COID'
+  COIDLower:
+    Description: COID lower
+    Value:
+      'Fn::Transform':
+        Name: 'String'
+        Parameters:
+          InputString: !Ref COID
+          Operation: Lower
+    Export:
+      Name: !Sub '${AWS::StackName}-COIDLower'
+  APID:
+    Description: APID
+    Value: !Ref APID
+    Export:
+      Name: !Sub '${AWS::StackName}-APID'
+  APIDLower:
+    Description: APID lower
+    Value:
+      'Fn::Transform':
+        Name: 'String'
+        Parameters:
+          InputString: !Ref APID
+          Operation: Lower
+    Export:
+      Name: !Sub '${AWS::StackName}-APIDLower'
+  ASSETID:
+    Description: ASSETID
+    Value: !Ref ASSETID
+    Export:
+      Name: !Sub '${AWS::StackName}-ASSETID'
+  SID:
+    Description: SID
+    Value: !Ref SID
+    Export:
+      Name: !Sub '${AWS::StackName}-SID'
+  SIDLower:
+    Description: SID lower
+    Value:
+      'Fn::Transform':
+        Name: 'String'
+        Parameters:
+          InputString: !Ref SID
+          Operation: Lower
+    Export:
+      Name: !Sub '${AWS::StackName}-SIDLower'
+  PrefixResourceName:
+    Description: prefix for the aws resources name (prefix-<name>-<seq>)
+    Value: !Sub "${COID}-${ASSETID}-${APID}-${SID}"
+    Export:
+      Name: !Sub '${AWS::StackName}-PrefixResourceName'
+  PrefixResourceNameLower:
+    Value:
+      'Fn::Transform':
+          Name: 'String'
+          Parameters:
+            InputString: !Sub "${COID}-${ASSETID}-${APID}-${SID}"
+            Operation: Lower
+    Export:
+      Name: !Sub '${AWS::StackName}-PrefixResourceNameLower'

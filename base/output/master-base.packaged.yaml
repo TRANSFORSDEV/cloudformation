@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: This template creates a Key in KMS, a base bucket S3 and a topic SNS
+  for suport notification.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Environment Configuration
+      Parameters:
+      - StackNumber
+      - ENV
+      - COID
+      - APID
+      - ASSETID
+      - SID
+    - Label:
+        default: Support Configuration
+      Parameters:
+      - SupportEmail
+Parameters:
+  StackNumber:
+    Description: Use to avoid conflicts when deploy various instances of this instance
+      with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>
+    Type: String
+    Default: '00'
+  COID:
+    Type: String
+    Description: COID
+  ASSETID:
+    Type: String
+    Description: ASSETID
+  APID:
+    Type: String
+    Description: APID
+  ENV:
+    Description: Nombre del ambiente
+    Type: String
+  SID:
+    Type: String
+    Description: SID
+  SupportEmail:
+    Type: String
+    Description: Email to send support notificacion for this stack
+    Default: ''
+Conditions:
+  HasSuportEmail:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: SupportEmail
+      - ''
+Resources:
+  EnvironmentStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.us-west-2.amazonaws.com/transfors-template-arq-us-west-2/transfors/prd/base/528af4d1251efa57dcdde7a5b04d8384.template
+      Parameters:
+        ENV:
+          Ref: ENV
+        ASSETID:
+          Ref: ASSETID
+        APID:
+          Ref: APID
+        SID:
+          Ref: SID
+        COID:
+          Ref: COID
+  KmsStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.us-west-2.amazonaws.com/transfors-template-arq-us-west-2/transfors/prd/base/ba4c76802321c63177be706672692882.template
+      Parameters:
+        StackNumber:
+          Ref: StackNumber
+        Action: CREATE
+        EnvironmentStack:
+          Fn::GetAtt:
+          - EnvironmentStack
+          - Outputs.StackName
+        EnableKeyRotation: 'YES'
+  SupportNotificationTopic:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.us-west-2.amazonaws.com/transfors-template-arq-us-west-2/transfors/prd/base/f55e5427d96bc3ad0e52363cbab20377.template
+      Parameters:
+        StackNumber:
+          Ref: StackNumber
+        EnvironmentStack:
+          Fn::GetAtt:
+          - EnvironmentStack
+          - Outputs.StackName
+        TopicName: support-notifications
+        Email:
+          Ref: SupportEmail
+Outputs:
+  TemplateID:
+    Description: applying.pe template id.
+    Value: state/environment
+  TemplateVersion:
+    Description: applying.pe template version.
+    Value: 1.1.0
+  StackName:
+    Description: Stack name.
+    Value:
+      Fn::Sub: ${AWS::StackName}
+  EnvironmentStack:
+    Value:
+      Fn::GetAtt:
+      - EnvironmentStack
+      - Outputs.StackName
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-EnvironmentStack
+  KmsStack:
+    Value:
+      Fn::GetAtt:
+      - KmsStack
+      - Outputs.StackName
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-KmsStack
+  KmsKeyArn:
+    Value:
+      Fn::GetAtt:
+      - KmsStack
+      - Outputs.KeyArn
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-KmsKeyArn
+  SupportTopicStack:
+    Value:
+      Fn::GetAtt:
+      - SupportNotificationTopic
+      - Outputs.StackName
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-SupportTopicStack
+  SupportTopicArn:
+    Value:
+      Fn::GetAtt:
+      - SupportNotificationTopic
+      - Outputs.TopicARN
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-SupportTopicArn

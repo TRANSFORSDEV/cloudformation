@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'State: Environment Client security group, a applying.pe template'
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Stack Dependencies
+        Parameters:
+          - StackNumber
+          - MasterBaseStack
+          - MasterSharedStack
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  MasterBaseStack:
+    Type: String
+  MasterSharedStack:
+    Type: String
+  MasterVPCStack:
+    Type: String
+  TypeELB:
+    Type: String
+  HTTPSCertificateArn:
+    Type: String
+    Default: 'arn:aws:acm:us-east-1:573128502780:certificate/2a0282cc-6f0c-4d6f-a707-111ddc1d4402'
+  DomainName:
+    Type: String
+    Default: ''
+Resources:
+  # ELB
+  ELBStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../lib/templates/ec2/elb3.yaml
+      Parameters:
+        StackNumber: 
+          Ref: StackNumber
+        EnvironmentStack: 
+          Fn::ImportValue:
+            Fn::Sub: '${MasterBaseStack}-EnvironmentStack'
+        MasterVPCStack: 
+          Ref: MasterVPCStack
+        BalancerName: IPS
+        Subnets: !ImportValue
+          'Fn::Sub': '${MasterVPCStack}-SubnetsPublic'
+          # - Fn::ImportValue:
+          #   Fn::Sub: '${MasterVPCStack}-SubnetsPublic'
+        Schema: internet-facing
+        Type: 
+          Ref: TypeELB
+        HTTP: ENABLED
+        HTTPS: ENABLED
+        HTTPSCertificateArn: 
+          Ref: HTTPSCertificateArn
+        # DomainName:
+        #   Ref: DomainName
+        # HostedZoneId: !ImportValue
+        #   'Fn::Sub': '${MasterSharedStack}-HostedZonePublicId'
+Outputs:
+  TemplateID:
+    Description: applying.pe template id.
+    Value: state/environment
+  TemplateVersion:
+    Description: applying.pe template version.
+    Value: 1.1.0
+  StackName:
+    Description: Stack name.
+    Value: 
+      Fn::Sub: '${AWS::StackName}'
+  LoadBalancerStack:
+    Value: 
+      Fn::GetAtt:
+      - ELBStack
+      - Outputs.StackName
+    Export:
+      Name: 
+        Fn::Sub: '${AWS::StackName}-LoadBalancerStack'
+  LoadBalancerArn:
+    Value: 
+      Fn::GetAtt:
+      - ELBStack
+      - Outputs.LoadBalancerArn
+    Export:
+      Name: 
+        Fn::Sub: '${AWS::StackName}-LoadBalancerArn'
+  LoadBalancerName:
+    Value: 
+      Fn::GetAtt:
+      - ELBStack
+      - Outputs.LoadBalancerName
+    Export:
+      Name: 
+        Fn::Sub: '${AWS::StackName}-LoadBalancerName'
+  LoadBalancerType:
+    Value: network
+    Export:
+      Name: 
+        Fn::Sub: '${AWS::StackName}-LoadBalancerType'
+  LoadBalancerSchema:
+    Value: internet-facing
+    Export:
+      Name: 
+        Fn::Sub: '${AWS::StackName}-LoadBalancerSchema'

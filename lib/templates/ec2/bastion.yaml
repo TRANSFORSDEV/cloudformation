@@ -1,0 +1,248 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: EC2 Bastion Template.
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Environment Settings
+        Parameters:
+          - StackNumber
+      - Label:
+          default: Stacks
+        Parameters:
+          - EnvironmentStack
+          - KmsStack
+          - VPCStack
+      - Label:
+          default: 'Setting for EC2 Masivo'
+        Parameters: 
+          - EC2BastionAMI
+          - EC2BastionInstanceType
+          - EC2BastionKeyPairName
+          - EC2BastionStorageSizeRootDisk
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  EnvironmentStack:
+    Description: "Required the name of the environment Stack"
+    Type: String
+  KmsStack:
+    Description: "Required the name of the environment Stack"
+    Type: String
+  VPCStack:
+    Description: "Required the name of the environment Stack"
+    Type: String
+  #ResourceStack:
+  #  Description: "Required the name of the Resource Stack"
+  #  Type: String  
+  #BackendStack:
+  #  Description: "Required the name of the Backend Stack"
+  #  Type: String  
+  EC2BastionAMI:
+    #Description: Select AMI to use for the Server instances.
+    #Type: 'Value<AWS::EC2::Image::Id>'
+    Type: String
+    Description: Select AMI to use for the Server instances.
+    Default: ''
+    AllowedPattern: '^(ami-([a-zA-Z0-9]{8,})){0,1}$'
+    ConstraintDescription: Must be a valid AMI.
+
+  EC2BastionInstanceType:
+    Description: Select Amazon EC2 instance type for the WebServer instances.
+    Type: String
+    Default: t4g.nano
+  EC2BastionKeyPairName:
+    ConstraintDescription: (Optional) Must be the name of an existing EC2 KeyPair.
+    Default: id_rsa_aws
+    Description: The name of an existing public/private key pair, which allows you to
+      securely connect to your instance after it launches. Use 'ec2-user' as SSH
+      username for the connection to the Bastion hosts, then use 'bitnami' as
+      SSH username for the connection to the WordPress instances.
+    Type: String
+  EC2BastionStorageSizeRootDisk:
+    Description: Storage Size for virtual Disk.
+    Type: Number
+    Default: 8
+    MaxValue: 16000
+    MinValue: 1
+    ConstraintDescription: Storage size.
+  
+  RemoteAccessBastionCIDR:
+    Description: Allowed CIDR block for internal access to the Server. Set it to 0.0.0.0/0
+      to make it accessible from anywhere.
+    Type: String
+    Default: 0.0.0.0/0
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))|$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+
+#Conditions:
+#  EnableInstanceMonitoring: !Equals
+#    - !Ref EC2BastionEc2Monitoring
+#    - Disabled
+#  HasKeyPair: !Not [!Equals [ !Ref EC2BastionKeyPairName, '' ]]
+Resources:  
+
+# IAM ROLE FOR WEBSERVER
+  EC2BastionEc2InstanceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub
+        - '${PREFIX}-EC2-${StackNumber}-EC2BastionOregon-Role'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+# INSTANCE PROFILE FOR WEBSERVER
+  EC2BastionInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      InstanceProfileName: !Sub
+        - '${PREFIX}-EC2-${StackNumber}-EC2BastionOregon-InstanceProfile'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Path: /
+      Roles:
+        - !Ref EC2BastionEc2InstanceRole
+# IAM POLICY FOR WEBSERVER
+  EC2BastionSSMPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: !Sub
+        - '${PREFIX}-PO-${StackNumber}-EC2Bastion-POLICY-SSM'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 'ssmmessages:*' # SSM Agent by https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-setting-up-messageAPIs.html
+              - 'ssm:*' # SSM agent by https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-setting-up-messageAPIs.html
+              - 'ec2messages:*' # SSM Session Manager by https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-setting-up-messageAPIs.html
+            Effect: Allow
+            Resource: '*'
+      Roles:
+        - !Ref EC2BastionEc2InstanceRole
+
+  EC2BastionKMSAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub
+        - '${PREFIX}-PO-${StackNumber}-EC2Bastion-POLICY-kms'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: VisualEditor0
+            Effect: Allow
+            Action:
+              - "kms:Decrypt"
+              - "kms:GenerateDataKey"
+            Resource:
+              Fn::ImportValue:
+                Fn::Sub: ${KmsStack}-KeyArn
+      Roles:
+        - !Ref EC2BastionEc2InstanceRole
+  EC2BastionCloudWatchPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: !Sub
+        - '${PREFIX}-PO-${StackNumber}-EC2Bastion-POLICY-CloudWatch'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 'cloudwatch:PutMetricData'
+              - 'cloudwatch:GetMetricStatistics'
+              - 'cloudwatch:ListMetrics'
+            Effect: Allow
+            Resource: '*'
+      Roles:
+        - !Ref EC2BastionEc2InstanceRole
+  
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Bastion Server Security Group
+      GroupName: !Sub
+        - '${PREFIX}-SG-${StackNumber}-BASTION-SG'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      VpcId:
+        'Fn::ImportValue': !Sub '${VPCStack}-VPCID'
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp:
+          Ref: RemoteAccessBastionCIDR
+        Description: Access to the bastion server through port 22
+
+  
+  ServerEC2Bastion:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      IamInstanceProfile: 
+       Ref: EC2BastionInstanceProfile
+      ImageId: 
+       Ref: EC2BastionAMI
+      #IamInstanceProfile: 
+      #  Ref: EC2BastionEc2InstanceRole
+      InstanceType: 
+       Ref: EC2BastionInstanceType
+      KeyName: 
+       Ref: EC2BastionKeyPairName
+      SubnetId: 
+        Fn::ImportValue:
+          Fn::Sub: ${VPCStack}-PublicSubnet1ID
+      SecurityGroupIds:
+        - Ref: BastionSecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -ex
+          amazon-linux-extras install -y postgresql13
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+              VolumeSize: 
+                Ref: EC2BastionStorageSizeRootDisk
+              Encrypted: true
+              VolumeType: "gp3"
+              KmsKeyId: #Para agregar el cifrado con la llave KMS
+                "Fn::ImportValue": !Sub "${KmsStack}-KeyId"
+      Tags:    
+        - Key: Name
+          Value: 
+            Fn::Sub:
+            - '${PREFIX}-EC2-${StackNumber}-Bastion'
+            - PREFIX: 
+                Fn::ImportValue:
+                  Fn::Sub: ${EnvironmentStack}-PrefixResourceName
+
+Outputs:
+  StackName:
+    Description: Stack name.
+    Value:
+      Fn::Sub: ${AWS::StackName}
+  RoleEC2Bastion:
+    Description: Role from EC2Bastion Stack
+    Value:
+      Ref: EC2BastionEc2InstanceRole
+    Export:
+      Name: 
+        Fn::Sub: ${AWS::StackName}-RoleEC2Bastion
+  SecurityGroupId:
+    Description: SecurityGroupId
+    Value:
+      Ref: BastionSecurityGroup
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-SecurityGroupId

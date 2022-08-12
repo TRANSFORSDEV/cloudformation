@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  EnvironmentStack:
+    Description: "Required the name of the environment Stack"
+    Type: String
+  S3BucketStack:
+    Type: String
+  CloudfrontDistributionStack:
+    Description: "optional cloudfront distribution stack"
+    Type: String
+    Default: ''
+  PublicReadAccess:
+    Type: String
+    AllowedValues: [ENABLED, DISABLED]
+    Default: DISABLED
+Conditions:
+  HasCloudfront: !Not [ !Equals [ !Ref CloudfrontDistributionStack, '' ] ]
+  HasPublicReadAccess: !Equals [ !Ref PublicReadAccess, ENABLED ]
+Resources:
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        'Fn::ImportValue': !Sub '${S3BucketStack}-BucketName'
+      PolicyDocument:
+        Statement:
+          - !If
+            - HasCloudfront
+            - Sid: "Allow-OAI-Access-To-Bucket"
+              Action:
+                - "s3:GetObject"
+              Effect: Allow
+              Principal:
+                AWS: !Sub
+                  - "arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${IDENTITY}"
+                  - IDENTITY:
+                      'Fn::ImportValue': !Sub '${CloudfrontDistributionStack}-CloudFrontIdentity'
+              Resource: !Sub
+                - "arn:aws:s3:::${BUCKET_NAME}/*"
+                - BUCKET_NAME:
+                    'Fn::ImportValue': !Sub '${S3BucketStack}-BucketName'
+            - !Ref AWS::NoValue
+          - !If
+            - HasPublicReadAccess
+            - Sid: "Allow-Public-Read-Access-To-Bucket"
+              Action:
+                - "s3:GetObject"
+                - "s3:GetObjectVersion"
+              Effect: Allow
+              Principal: "*"
+              Resource: !Sub
+                - "arn:aws:s3:::${BUCKET_NAME}/*"
+                - BUCKET_NAME:
+                    'Fn::ImportValue': !Sub '${S3BucketStack}-BucketName'
+            - !Ref AWS::NoValue
+        Version: "2012-10-17"
+Outputs:
+  TemplateID:
+    Description: 'applying.pe template id.'
+    Value: 'S3/Bucket'
+  TemplateVersion:
+    Description: 'applying.pe template version.'
+    Value: '1.1.0'
+  StackName:
+    Description: 'Stack name.'
+    Value: !Sub '${AWS::StackName}'

@@ -1,0 +1,155 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: 'waf automations'
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  # AppLogBucketStack:
+  #   Description: ALB access log bucket
+  #   Type: String
+  #   Default: ''
+  WafLogBucketStack:
+    Description: Waf Log bucket
+    Type: String
+  LambdaLogLevel:
+    Type: String
+    AllowedValues: ['DEBUG', 'INFO','WARNING', 'ERROR','CRITICAL']
+  WAFStack:
+    Type: String
+  EnvironmentStack:
+    Type: String
+Conditions:
+  # HasAppLogBucketStack: !Not [!Equals [!Ref AppLogBucketStack, '']]
+  HasWafLogBucketStack: !Not [!Equals [!Ref WafLogBucketStack, '']]
+Mappings:
+  Solution:
+    Data:
+      SendAnonymousUsageData: 'Yes'
+      LogLevel: 'INFO'
+      SolutionID: 'SO0006'
+      MetricsURL: 'https://metrics.awssolutionsbuilder.com/generic'
+    Action:
+      WAFWhitelistRule: 'ALLOW'
+      WAFBlacklistRule: 'BLOCK'
+      WAFSqlInjectionRule: 'BLOCK'
+      WAFXssRule: 'BLOCK'
+      WAFHttpFloodRateBasedRule: 'BLOCK'
+      WAFHttpFloodRegularRule: 'BLOCK'
+      WAFScannersProbesRule: 'BLOCK'
+      WAFIPReputationListsRule: 'BLOCK'
+      WAFBadBotRule: 'BLOCK'
+    Athena:
+      QueryScheduledRunTime: 5   # by default athena query runs every 5 minutes, update it if needed
+Resources:
+  ConfigAppLogBucket:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Description: >-
+        This lambda function configures the Web ACL rules based on the features enabled in the
+        CloudFormation template.
+      FunctionName: !Sub
+        - '${PREFIX}-LA-${StackNumber}-ConfigAppLogBucket'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      Role: !GetAtt ConfigAppLogBucketRole.Arn
+      Code: ../output/configure-log-buckets
+      Handler: 'configure-log-buckets.handler'
+      Environment:
+        Variables:
+          LOG_LEVEL: !FindInMap [ "Solution", "Data", "LogLevel" ]
+      Runtime: python3.8
+      MemorySize: 128
+      Timeout: 30
+  ConfigAppLogBucketRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub
+        - '${PREFIX}-LA-${StackNumber}-ConfigAppLogBucket-Role'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: !Sub
+            - '${PREFIX}-LA-${StackNumber}-ConfigAppLogBucket-Role-Logs'
+            - PREFIX: !ImportValue
+                'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource:
+                  - !Sub
+                    - 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${PREFIX}-LA-${StackNumber}-ConfigAppLogBucket:*'
+                    - PREFIX: !ImportValue
+                        'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+        - !If
+          - HasWafLogBucketStack
+          - PolicyName: S3AccessGeneralAppAccessLog
+            PolicyDocument:
+              Statement:
+                  - Effect: Allow
+                    Action:
+                      - 's3:GetBucketNotification'
+                      - 's3:PutBucketNotification'
+                    Resource:
+                      - !Sub
+                        - 'arn:${AWS::Partition}:s3:::${BUCKET_NAME}'
+                        - BUCKET_NAME:
+                            'Fn::ImportValue': !Sub '${WafLogBucketStack}-BucketName'
+          - !Ref 'AWS::NoValue'
+        # - !If
+        #   - HasAppLogBucketStack
+        #   - PolicyName: S3AccessGeneralWafLog
+        #     PolicyDocument:
+        #       Statement:
+        #         - Effect: Allow
+        #           Action:
+        #             - 's3:GetBucketNotification'
+        #             - 's3:PutBucketNotification'
+        #           Resource:
+        #             - !Sub
+        #               - 'arn:${AWS::Partition}:s3:::${BUCKET_NAME}'
+        #               - BUCKET_NAME:
+        #                   'Fn::ImportValue': !Sub '${AppLogBucketStack}-BucketName'
+        #   - !Ref 'AWS::NoValue'
+        
+  #ConfigAppLogBucketPermission:
+   # Type: AWS::Lambda::Permission
+   # Properties:
+    #  Action: lambda:InvokeFunction
+     # FunctionName: !GetAtt ConfigAppLogBucket.Arn
+     # Principal: s3.amazonaws.com
+     # SourceAccount: !Ref "AWS::AccountId"
+     # SourceArn:
+     #   'Fn::ImportValue': !Sub '${WafLogBucketStack}-BucketArn'
+Outputs:
+  StackName:
+    Description: Stack name.
+    Value: !Sub '${AWS::StackName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-StackName'
+#  ConfigureWafLoggingArn:
+#    Value: !GetAtt ConfigWafLogging.Arn
+#    Export:
+#      Name: !Sub '${AWS::StackName}-ConfigureWafLoggingArn'
+  ConfigureAppLogBucketArn:
+    Value: !GetAtt ConfigAppLogBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ConfigureAppLogBucketArn'

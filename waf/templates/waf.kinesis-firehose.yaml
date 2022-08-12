@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: 'waf kinesis firehose'
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  EnvironmentStack:
+    Description: Required the name of the environment Stack.
+    Type: String
+  KmsStack:
+    Description: Optional.
+    Type: String
+  S3TargetStack:
+    Description: S3 target stack
+    Type: String
+  S3Encryption:
+    Description: Encrypt WAF log files on S3 Bucket
+    Type: String
+    Default: 'YES'
+    AllowedValues: ['YES','NO']
+  S3Prefix:
+    Type: String
+    Description: 'not ends with "/" , delivery to s3 with prefix "${prefix}/" and "${prefix-error}/"'
+    Default: waf-logs
+  BufferIntervalInSeconds:
+    Type: Number
+    Default: 300
+  BufferSizeInMBs:
+    Type: Number
+    Default: 5
+Conditions:
+  HasS3Encryption: !Equals
+    - !Ref S3Encryption
+    - 'YES'
+Resources:
+
+  S3DeliveryLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub
+        - '${PREFIX}-CW-${StackNumber}-WAF'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      RetentionInDays: 7
+
+  S3DeliveryLogStream:
+    Type: AWS::Logs::LogStream
+    Properties:
+      LogGroupName: !Ref S3DeliveryLogGroup
+      LogStreamName: S3Delivery
+
+  FirehoseS3DeliveryRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      Path: /
+      RoleName: !Sub
+        - '${PREFIX}-KDS-${StackNumber}-S3Delivery-Role'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: S3Delivery
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: ''
+                Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:PutObject
+                Resource:
+                  - 'Fn::ImportValue': !Sub '${S3TargetStack}-BucketArn'
+                  - !Sub
+                    - '${BUCKET_ARN}/*'
+                    - BUCKET_ARN:
+                        'Fn::ImportValue': !Sub '${S3TargetStack}-BucketArn'
+                  - 'arn:aws:s3:::%FIREHOSE_BUCKET_NAME%'
+                  - 'arn:aws:s3:::%FIREHOSE_BUCKET_NAME%/*'
+        - PolicyName: S3DeliveryLog
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: ''
+                Effect: Allow
+                Action:
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${S3DeliveryLogGroup}:log-stream:*'
+
+        - !If
+          - HasS3Encryption
+          - PolicyName: S3DeliveryEncrypt
+            PolicyDocument:
+              Version: 2012-10-17
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - kms:GenerateDataKey
+                    - kms:Decrypt
+                  Resource:
+                    - 'Fn::ImportValue': !Sub "${KmsStack}-KeyArn"
+                  Condition:
+                    StringEquals:
+                      kms:ViaService: s3.us-east-1.amazonaws.com
+                    StringLike:
+                      kms:EncryptionContext:aws:s3:arn:
+                        - !Sub
+                          - '${BUCKET_ARN}/*'
+                          - BUCKET_ARN:
+                              'Fn::ImportValue': !Sub '${S3TargetStack}-BucketArn'
+                        - !Sub
+                          - '${BUCKET_ARN}/%FIREHOSE_BUCKET_PREFIX%*'
+                          - BUCKET_ARN:
+                              'Fn::ImportValue': !Sub '${S3TargetStack}-BucketArn'
+          - |
+        - !If
+          - HasS3Encryption
+          - PolicyName: kms
+            PolicyDocument:
+              Version: 2012-10-17
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - kms:Decrypt
+                  Resource:
+                    - !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/%SSE_KEY_ID%'
+                  Condition:
+                    StringEquals:
+                      kms:ViaService: kinesis.%REGION_NAME%.amazonaws.com
+                    StringLike:
+                      kms:EncryptionContext:aws:kinesis:arn: !Sub 'arn:aws:kinesis:%REGION_NAME%:${AWS::AccountId}:stream/%FIREHOSE_STREAM_NAME%'
+          - !Ref AWS::NoValue
+
+  KinesisFireHose:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: !Sub
+        - 'aws-waf-logs-${PREFIX}-KDS-${StackNumber}'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      DeliveryStreamType: DirectPut
+      ExtendedS3DestinationConfiguration:
+        BucketARN:
+          'Fn::ImportValue': !Sub '${S3TargetStack}-BucketArn'
+        BufferingHints:
+          IntervalInSeconds: !Ref BufferIntervalInSeconds
+          SizeInMBs: !Ref BufferSizeInMBs
+        CompressionFormat: "GZIP"
+        Prefix: !Sub "${S3Prefix}/"
+        ErrorOutputPrefix : !Sub "${S3Prefix}-error/"
+        RoleARN: !GetAtt FirehoseS3DeliveryRole.Arn
+        EncryptionConfiguration:
+          KMSEncryptionConfig:
+            AWSKMSKeyARN: !If [HasS3Encryption, "Fn::ImportValue": !Sub "${KmsStack}-KeyArn", !Ref 'AWS::NoValue']
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: !Ref S3DeliveryLogGroup
+          LogStreamName: !Ref S3DeliveryLogStream
+Outputs:
+  StackName:
+    Description: Stack name.
+    Value: !Sub '${AWS::StackName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-StackName'
+  DeliveryStreamArn:
+    Value: !GetAtt KinesisFireHose.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DeliveryStreamArn'
+  DeliveryStreamName:
+    Value: !Ref KinesisFireHose
+    Export:
+      Name: !Sub '${AWS::StackName}-DeliveryStreamName'

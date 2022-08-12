@@ -1,0 +1,338 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'State: Environment Client security group, a applying.pe template'
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  MasterBaseStack:
+    Description: Stack name of base stack.
+    Type: String
+    Default: 'LPSTV-0001-DVSC-SCP-ST-00-MASTER-BASE'
+  MasterElbStack:
+    Description: Stack name of base stack.
+    Type: String
+  MasterApiGatewayStack:
+    Description: Stack name of base stack.
+    Type: String
+  # WafLogBucket:
+  #   Description: Bucket to store WAF accessLogs
+  #   Type: String
+  #   AllowedValues: [ 'USE_BASE_STACK_LOG_BUCKET', 'USE_ECS_STACK_LOG_BUCKET', 'CREATE_NEW_BUCKET' ]
+  #   Default: 'CREATE_NEW_BUCKET'
+  WafName:
+    Description: Name for WAF
+    Type: String
+  DefaultAction:
+    Description: Default Action for WAF
+    Type: String
+  A1Injection:
+    Description: Active OWASP A1 Injection
+    Type: String
+    AllowedValues: [ 'YES', 'NO' ]
+    Default: 'YES'
+  A3CrossSiteScripting:
+    Description: Active OWASP A3 Cross-Site Scripting
+    Type: String
+    AllowedValues: [ 'YES', 'NO' ]
+    Default: 'YES'
+  A4BrokenAccessControl:
+    Description: Active OWASP A4 Broken Access Control
+    Type: String
+    AllowedValues: [ 'YES', 'NO' ]
+    Default: 'YES'
+  A5SecurityMisconfiguration:
+    Description: Active OWASP A5 Security Misconfiguration for spring boot applications
+    Type: String
+    AllowedValues: [ 'YES', 'NO' ]
+    Default: 'YES'
+  A7InsufficientAttackProtection:
+    Description: Active OWASP A7 – Insufficient Attack Protections
+    Type: String
+    AllowedValues: [ 'YES', 'NO' ]
+    Default: 'YES'
+  A8CrossSiteRequestForgery:
+    Description: Active OWASP A8 – Cross-Site Request Forgery
+    Type: String
+    AllowedValues: [ 'YES', 'NO' ]
+    Default: 'YES'
+  # For A7InsufficientAttackProtection
+  MaxExpectedBodySize:
+    Type: Number
+    Description: Maximum number of bytes allowed in the URI component of the HTTP request. 128000 = 128KB
+    Default: 128000
+  MaxExpectedURISize:
+    Type: Number
+    Description: Maximum number of bytes allowed in the URI component of the HTTP request. 128 = 0.128KB
+    Default: 128
+  MaxExpectedQueryStringSize:
+    Type: Number
+    Description: Maximum number of bytes allowed in the query string component of the HTTP request. 256 = 0.256KB
+    Default: 256
+  # MaxExpectedHeaderIdAplicacion:
+  #   Type: Number
+  #   Description: Maximum number of bytes allowed in the header x-id-aplicacion. 16 = 0.016KB
+  #   Default: 16
+  # MaxExpectedHeaderModulo:
+  #   Type: Number
+  #   Description: Maximum number of bytes allowed in the header x-modulo. 9 = 0.009KB
+  #   Default: 9
+  # MaxExpectedHeaderIdUsuario:
+  #   Type: Number
+  #   Description: Maximum number of bytes allowed in the header x-id-usuario. 20 = 0.020KB
+  #   Default: 20
+  MaxExpectedHeaderAuthorization:
+    Type: Number
+    Description: Maximum number of bytes allowed in the header authorization. 1900 = 1.9KB
+    Default: 1900
+
+  MaxExpectedHeaderCSRF:
+    Type: Number
+    Description: Maximum number of bytes allowed in the header CSRF x-csrf-token. 37 = 0.037KB
+    Default: 37
+
+  #For Log Parse
+  RequestThreshold:
+    Type: Number
+    Description: Amount of allowed request per IP and token
+    Default: 200
+  WAFBlockPeriod:
+    Type: Number
+    Description: Time in min for block to IPs
+    Default: 5
+
+Conditions:
+  # UseMasterBaseStackLogBucket: !Equals [ !Ref WafLogBucket, 'USE_BASE_STACK_LOG_BUCKET' ]
+  # UseEcsStackLogBucket: !Equals [ !Ref WafLogBucket, 'USE_ECS_STACK_LOG_BUCKET' ]
+  # CreateLogBucket: !Equals [ !Ref WafLogBucket, 'CREATE_NEW_BUCKET' ]
+  HasMasterElbStack:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: MasterElbStack
+          - ''
+  HasMasterApiGatewayStack:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: MasterApiGatewayStack
+          - ''
+  ActiveA1Injection: !Equals [ !Ref A1Injection, 'YES' ]
+  ActiveA1Injection: !Equals [ !Ref A1Injection, 'YES' ]
+  ActiveA3XSS: !Equals [ !Ref A3CrossSiteScripting, 'YES' ]
+  ActiveA4BrokenAccessControl: !Equals [ !Ref A4BrokenAccessControl, 'YES' ]
+  ActiveA5SecMisconf: !Equals [ !Ref A5SecurityMisconfiguration, 'YES' ]
+  ActiveA7InsufficientAttack: !Equals [ !Ref A7InsufficientAttackProtection, 'YES' ]
+  ActiveA8CrossSiteRequestForgery: !Equals [ !Ref A8CrossSiteRequestForgery, 'YES' ]
+  ActivateHttpFloodProtection: !Or
+    - !Condition ActiveA7InsufficientAttack
+    - !Condition ActiveA7InsufficientAttack
+  ActivateScannersProbesProtection: !Or
+    - !Condition ActiveA7InsufficientAttack
+    - !Condition ActiveA7InsufficientAttack
+  CreateAutomations: !Or
+    - !Condition ActivateHttpFloodProtection
+    - !Condition ActivateScannersProbesProtection
+Resources:
+
+  S3LogBucketStack:
+    Type: AWS::CloudFormation::Stack
+    # Condition: CreateLogBucket
+    Properties:
+      TemplateURL: ../lib/templates/s3/bucket.yaml
+      Parameters:
+        StackNumber: !Ref StackNumber
+        EnvironmentStack: !ImportValue
+          'Fn::Sub': '${MasterBaseStack}-EnvironmentStack'
+        KmsStack: !ImportValue
+          'Fn::Sub': '${MasterBaseStack}-KmsStack'
+        Action: 'CREATE'
+        BucketName: 'logs'
+
+  VariablesStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: templates/waf.variables.yaml
+      Parameters:
+        WafLogBucketStack: !GetAtt S3LogBucketStack.Outputs.StackName
+        # #   !If
+        # #     - UseMasterBaseStackLogBucket
+        # #     - 'Fn::ImportValue': !Sub '${MasterBaseStack}-S3LogBucketStack'
+        # #     - !If
+        # #       - UseEcsStackLogBucket
+        # #       - 'Fn::ImportValue': !Sub '${MasterEcsStack}-S3LogBucketStack'
+        # #       - !GetAtt S3LogBucketStack.Outputs.StackName
+        # AppLogBucketStack:
+        #   'Fn::ImportValue': !Sub '${MasterEcsStack}-S3LogBucketStack'
+        EndpointType: 'ALB'
+
+  KinesisFirehoseStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: templates/waf.kinesis-firehose.yaml
+      Parameters:
+        StackNumber: !Ref StackNumber
+        EnvironmentStack:
+          'Fn::ImportValue': !Sub '${MasterBaseStack}-EnvironmentStack'
+        KmsStack: !ImportValue
+          'Fn::Sub': '${MasterBaseStack}-KmsStack'
+        S3TargetStack: !GetAtt VariablesStack.Outputs.WafLogBucketStack
+        S3Encryption: 'YES'
+        S3Prefix: 'waf-logs'
+        BufferIntervalInSeconds: 300
+        BufferSizeInMBs: 5
+
+  WAFStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../lib/templates/waf/waf.yaml
+      Parameters:
+        StackNumber: !Ref StackNumber
+        EnvironmentStack:
+          'Fn::ImportValue': !Sub '${MasterBaseStack}-EnvironmentStack'
+        ElbStack: 
+          Fn::If:
+            - HasMasterElbStack
+            - Fn::ImportValue:
+                Fn::Sub: ${MasterElbStack}-LoadBalancerStack
+            - ""
+        ApiGatewayStack:
+          Fn::If:
+            - HasMasterApiGatewayStack
+            - Fn::ImportValue:
+                Fn::Sub: ${MasterApiGatewayStack}-ApiGatewayStack
+            - ""
+        WafName: !Ref WafName
+        DefaultAction: !Ref DefaultAction
+        EndpointType: !GetAtt VariablesStack.Outputs.EndpointType
+        EnableSQLInjectionProtection: !If [ ActiveA1Injection, 'YES', 'NO' ]
+        EnableXSSInjectionProtection: !If [ ActiveA3XSS, 'YES', 'NO' ]
+        EnableBlockRfiLfi: !If [ ActiveA4BrokenAccessControl, 'YES', 'NO' ]
+        EnableBlockSpringBootEndpoint: !If [ ActiveA5SecMisconf, 'YES', 'NO' ]
+        # Size restrictions conf - start
+        EnableSizeRestrinction: !If [ ActiveA7InsufficientAttack , 'YES', 'NO' ]
+        EnableCrossSiteRequestForgery: !If [ ActiveA8CrossSiteRequestForgery , 'YES', 'NO' ]
+        MaxExpectedURISize: !Ref MaxExpectedURISize
+        MaxExpectedQueryStringSize: !Ref MaxExpectedQueryStringSize
+        MaxExpectedBodySize: !Ref MaxExpectedBodySize
+        # MaxExpectedHeaderIdAplicacion: !Ref MaxExpectedHeaderIdAplicacion
+        # MaxExpectedHeaderModulo: !Ref MaxExpectedHeaderModulo
+        # MaxExpectedHeaderIdUsuario: !Ref MaxExpectedHeaderIdUsuario
+        MaxExpectedHeaderAuthorization: !Ref MaxExpectedHeaderAuthorization
+        # Size restrictions conf - end
+        MaxExpectedHeaderCSRF: !Ref MaxExpectedHeaderCSRF
+        BlockFromIpHttpflood: !If [ ActivateHttpFloodProtection , 'YES', 'NO' ]
+        AllowFromIpHttpflood: "NO"
+        AllowIpsV4: ""
+        AllowIpsV6: ""
+        BlockFromIpScannersProbes: !If [ ActivateScannersProbesProtection , 'YES', 'NO' ]
+
+  CustomResourceWafLogStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: templates/waf.custom-resources-waf-log.yaml
+      Parameters:
+        StackNumber: !Ref StackNumber
+        # AppLogBucketStack: !GetAtt VariablesStack.Outputs.AppLogBucketStack
+        WafLogBucketStack: !GetAtt VariablesStack.Outputs.WafLogBucketStack
+        LambdaLogLevel: INFO
+        WAFStack: !GetAtt WAFStack.Outputs.StackName
+        EnvironmentStack:
+          'Fn::ImportValue': !Sub '${MasterBaseStack}-EnvironmentStack'
+        EndpointType: !GetAtt VariablesStack.Outputs.EndpointType
+
+  ConfigureAWSWAFLogs:
+    Type: 'Custom::ConfigureAWSWAFLogs'
+    Properties:
+      StackNumber: !Ref StackNumber
+      ServiceToken: !GetAtt CustomResourceWafLogStack.Outputs.ConfigureWafLoggingArn
+      WAFWebACLArn: !GetAtt WAFStack.Outputs.WebACLArn
+      DeliveryStreamArn: !GetAtt KinesisFirehoseStack.Outputs.DeliveryStreamArn
+
+  CustomResourceLogBucketStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: templates/waf.custom-resources-log-bucket.yaml
+      Parameters:
+        StackNumber: !Ref StackNumber
+        # AppLogBucketStack: !GetAtt VariablesStack.Outputs.AppLogBucketStack
+        WafLogBucketStack: !GetAtt VariablesStack.Outputs.WafLogBucketStack
+        LambdaLogLevel: INFO
+        WAFStack: !GetAtt WAFStack.Outputs.StackName
+        EnvironmentStack:
+          'Fn::ImportValue': !Sub '${MasterBaseStack}-EnvironmentStack'
+        # EndpointType: !GetAtt VariablesStack.Outputs.EndpointType
+
+  CustomResourceWafConfFileStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: templates/waf.custom-resources-waf-conf-file.yaml
+      Parameters:
+        StackNumber: !Ref StackNumber
+        # AppLogBucketStack: !GetAtt VariablesStack.Outputs.AppLogBucketStack
+        WafLogBucketStack: !GetAtt VariablesStack.Outputs.WafLogBucketStack
+        LambdaLogLevel: INFO
+        WAFStack: !GetAtt WAFStack.Outputs.StackName
+        EnvironmentStack:
+          'Fn::ImportValue': !Sub '${MasterBaseStack}-EnvironmentStack'
+        KmsStack: !ImportValue
+          'Fn::Sub': '${MasterBaseStack}-KmsStack'
+        # EndpointType: !GetAtt VariablesStack.Outputs.EndpointType
+
+  GenerateWafLogParserConfFile:
+    Type: 'Custom::GenerateWafLogParserConfFile'
+    Condition: CreateAutomations
+    Properties:
+      ServiceToken: !GetAtt CustomResourceWafConfFileStack.Outputs.GenerateWafConfFileArn
+      StackName: !GetAtt CustomResourceWafConfFileStack.Outputs.StackName
+      WafAccessLogBucket: !GetAtt S3LogBucketStack.Outputs.BucketName
+      RequestThreshold: !Ref RequestThreshold
+      WAFBlockPeriod: !Ref WAFBlockPeriod
+
+  WafAutomationsStack:
+    Type: AWS::CloudFormation::Stack
+    Condition: CreateAutomations
+    Properties:
+      TemplateURL: templates/waf.automations.yaml
+      Parameters:
+        StackNumber: !Ref StackNumber
+        EnvironmentStack:
+          'Fn::ImportValue': !Sub '${MasterBaseStack}-EnvironmentStack'
+        KmsStack: !ImportValue
+          'Fn::Sub': '${MasterBaseStack}-KmsStack'
+        WAFStack: !GetAtt WAFStack.Outputs.StackName
+        CustomResourceWafConfFileStackName: !GetAtt CustomResourceWafConfFileStack.Outputs.StackName
+        # AppLogBucketStack: !GetAtt VariablesStack.Outputs.AppLogBucketStack
+        WafLogBucketStack: !GetAtt VariablesStack.Outputs.WafLogBucketStack
+        HttpFloodProtection: !If [ ActivateHttpFloodProtection , 'YES', 'NO' ]
+        ScannersProbesProtection: !If [ ActivateScannersProbesProtection , 'YES', 'NO' ]
+        LambdaLogLevel: INFO
+        BlockPeriod: 10 # minutes
+        ErrorThreshold: 5 # per minute
+        RequestThreshold: 10 # per five minutes
+        EndpointType: !GetAtt VariablesStack.Outputs.EndpointType
+        LogType: 'waf'
+        CountToken: !If [ ActiveA4BrokenAccessControl, 'YES', 'NO' ]
+        ChangeDeviceToken: !If [ ActiveA4BrokenAccessControl, 'YES', 'NO' ]
+
+  ConfigureAWSLogBucket:
+    Type: 'Custom::ConfigureWafLogBucket'
+    Condition: CreateAutomations
+    DependsOn:
+      - WafAutomationsStack
+    Properties:
+      ServiceToken: !GetAtt CustomResourceLogBucketStack.Outputs.ConfigureAppLogBucketArn
+      WAFWebACLArn: !GetAtt WAFStack.Outputs.WebACLArn
+      DeliveryStreamArn: !GetAtt KinesisFirehoseStack.Outputs.DeliveryStreamArn
+      HttpFloodLambdaLogParser: !If [ActivateHttpFloodProtection, 'yes', 'no']
+      WafLogBucket: !GetAtt S3LogBucketStack.Outputs.BucketName
+      LogParser: !GetAtt WafAutomationsStack.Outputs.WafAnalyzerFunctionArn
+
+Outputs:
+  TemplateID:
+    Description: applying.pe template id.
+    Value: state/environment
+  TemplateVersion:
+    Description: applying.pe template version.
+    Value: 1.1.0
+  StackName:
+    Description: Stack name.
+    Value: !Sub '${AWS::StackName}'

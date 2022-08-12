@@ -1,0 +1,13 @@
+{
+  "general": {
+    "requestThreshold": 5,
+    "blockPeriod": 5,
+    "ignoredSufixes": []
+  },
+  "uri": {
+    "/core/order/webhook": {
+      "requestThreshold": 4,
+      "blockPeriod": 5
+    }
+  }
+}

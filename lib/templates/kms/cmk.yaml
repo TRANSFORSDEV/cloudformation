@@ -1,0 +1,124 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'Create a Customer Managed Key'
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  Action:
+    Type: String
+    AllowedValues:
+      - IMPORT
+      - CREATE
+    Default: "CREATE"
+  EnvironmentStack:
+    Description: "Required the name of the environment Stack"
+    Type: String
+  EnableKeyRotation:
+    Description: "[CREATE] Enable automatic key rotation"
+    Type: String
+    AllowedValues:
+      - 'YES'
+      - 'NO'
+    Default: 'YES'
+  KeyArn:
+    Description: "[IMPORT] the key arn to import"
+    Type: String
+    Default: ''
+#  KeyAlias:
+#    Description: "[IMPORT] the key alias to import"
+#    Type: String
+#    Default: ''
+Conditions:
+  HasEnableKeyRotation: !Equals
+    - Ref: EnableKeyRotation
+    - YES
+  IsImport: !Equals
+    - Ref: Action
+    - IMPORT
+  IsCreate: !Equals
+    - Ref: Action
+    - CREATE
+#  HasKeyAlias: !Not [ !Equals [ !Ref KeyAlias, '' ] ]
+#Mappings:
+
+Resources:
+  Key:
+    Condition: IsCreate
+    Type: 'AWS::KMS::Key'
+    Properties:
+      Description: Llave usada para la encriptación de los datos
+      Enabled: true
+      EnableKeyRotation: !If [ HasEnableKeyRotation, true, false ]
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: !Sub
+          - '${PREFIX}-CMK-POLICY-${StackNumber}'
+          - PREFIX: !ImportValue
+              'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+        Statement:
+          - Sid: Enable CloudWatch send message Topic
+            Effect: Allow
+            Principal:
+              Service: cloudwatch.amazonaws.com
+            Action: 
+              - 'kms:Decrypt'
+              - 'kms:GenerateDataKey'
+            Resource: '*'
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: Allow attachment of persistent resources
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action:
+              - 'kms:CreateGrant'
+              - 'kms:ListGrants'
+              - 'kms:RevokeGrant'
+              - 'kms:GetPublicKey'
+              - 'kms:Decrypt'
+              - 'kms:Encrypt'
+              - 'kms:DescribeKey'
+              - 'kms:GenerateDataKey'
+            Resource: '*'
+            Condition:
+              Bool:
+                'kms:GrantIsForAWSResource': true
+  Alias:
+    Condition: IsCreate
+    Type: 'AWS::KMS::Alias'
+    Properties:
+      AliasName: !Sub
+        - 'alias/${PREFIX}-CMK-${StackNumber}'
+        - PREFIX: !ImportValue
+            'Fn::Sub': '${EnvironmentStack}-PrefixResourceName'
+      TargetKeyId: !Ref Key
+Outputs:
+  TemplateID:
+    Description: gen-kms-cmk
+    Value: general/kms/cmk
+  TemplateVersion:
+    Description: applying.pe template version.
+    Value: 1.0.0
+  StackName:
+    Description: Stack name.
+    Value: !Sub '${AWS::StackName}'
+  KeyArn:
+    Description: Key ARN.
+    Value: !If [ IsCreate, !GetAtt Key.Arn, !Ref KeyArn ]
+    Export:
+      Name: !Sub '${AWS::StackName}-KeyArn'
+  KeyId:
+    Description: Key id.
+    Value: !If [ IsCreate, !Ref Key, !Select [1, !Split ["/", !Ref KeyArn]] ]
+    Export:
+      Name: !Sub '${AWS::StackName}-KeyId'
+#  KeyAlias:
+#    Description: Key ARN.
+#    Value: !If [IsCreate, !Ref Alias, !Ref KeyAlias]
+#    Export:
+#      Name: !Sub '${AWS::StackName}-KeyAlias'

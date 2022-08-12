@@ -1,0 +1,38 @@
+
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  # AppLogBucketStack:
+  #   Type: String
+  WafLogBucketStack:
+    Type: String
+  EndpointType:
+    Type: String
+Conditions:
+  HasNot:
+    Fn::Equals: [ 'a', 'b' ]
+
+Resources:
+  NullResource:
+    Type: 'Custom::NullResource'
+    Condition: HasNot
+    Properties:
+      ServiceToken: !Ref AWS::NoValue
+Outputs:
+  TemplateID:
+    Description: 'applying.pe template id.'
+    Value: 'WAF/Variables'
+  TemplateVersion:
+    Description: 'applying.pe template version.'
+    Value: '1.1.0'
+  # AppLogBucketStack:
+  #   Value: !Ref AppLogBucketStack
+  #   Export:
+  #     Name: !Sub '${AWS::StackName}-AppLogBucketStack'
+  WafLogBucketStack:
+    Value: !Ref WafLogBucketStack
+    Export:
+      Name: !Sub '${AWS::StackName}-WafLogBucketStack'
+  EndpointType:
+    Value: !Ref EndpointType
+    Export:
+      Name: !Sub '${AWS::StackName}-EndpointType'

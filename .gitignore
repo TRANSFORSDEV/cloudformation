@@ -1,0 +1,7 @@
+base/output/*
+elb/output/*
+elb2/output/*
+shared/output/*
+vpc/output/*
+waf/output/*
+waf2/output/*

@@ -36,7 +36,7 @@ $LOG_RETENTION_DAYS="30"
 
 #ELB
 $TYPE_ELB="application"
-$API_DOMAIN="api.transfors.co"
+$API_DOMAIN="www.transforsweb.co"
 
 #PARAMETROS RDS
 $DB_USERNAME="trannsfor_bd"

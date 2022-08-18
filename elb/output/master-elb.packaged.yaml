@@ -33,7 +33,7 @@ Resources:
   ELBStack:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://s3.us-east-1.amazonaws.com/transfors-template-arq/transfors/prd/elb/21ca44c9da72589f8234063d714e3f2e.template
+      TemplateURL: https://s3.amazonaws.com/transfors-template-arq/transfors/prd/elb/e412901cbd80cededbda38cb329e34e3.template
       Parameters:
         StackNumber:
           Ref: StackNumber

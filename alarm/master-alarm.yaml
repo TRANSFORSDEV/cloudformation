@@ -1,0 +1,126 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Crear un plan de backup automatico con parametros'
+Metadata:
+  Version: 1.0
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: 'Opciones iniciales de backup'
+        Parameters:
+          - BackupPlanName
+          - BackupVaultName
+          - KMSArn
+          - BackupSelectionName
+          - BackupTag
+      - Label:
+          default: 'Configurar reglas de backup'
+        Parameters:
+          - RuleName1
+          - BackupFrecuency1
+          - MoveToColdStorageAfterDays1
+          - RuleName2
+          - BackupFrecuency2
+          - MoveToColdStorageAfterDays2
+          - RuleName3
+          - BackupFrecuency3
+          - MoveToColdStorageAfterDays3
+      - Label:
+          default: "Creacion de rol de backup"
+        Parameters:
+          - BackupRoleName
+Parameters:
+  StackNumber:
+    Description: 'Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>'
+    Type: String
+    Default: '00'
+  MasterBaseStack:
+    Description: Stack name of base stack.
+    Type: String
+    Default: 'LPSTV-0001-DVSC-SCP-ST-00-MASTER-BASE'
+  MasterSharedStack:
+    Description: Stack name of shared stack.
+    Type: String
+    Default: 'LPSTV-0001-DVSC-SCP-ST-00-MASTER-BASE'
+  InstanceId1:
+    Description: Id instance.
+    Type: String
+    Default: "i-123h2v31v2"
+  AlarmName1:
+    Description: Alarm name.
+    Type: String
+    Default: "Transfor"
+  TargetCpuUtilization1:
+    Description: Porcentaje CPU alcanzado para realizar el escalamiento de contenedores, en blanco para no configurar
+    Type: Number
+    Default: "70"
+  InstanceId2:
+    Description: Id instance.
+    Type: String
+    Default: "i-123h2v31v2"
+  AlarmName2:
+    Description: Alarm name.
+    Type: String
+    Default: "Transfor"
+  TargetCpuUtilization2:
+    Description: Porcentaje CPU alcanzado para realizar el escalamiento de contenedores, en blanco para no configurar
+    Type: Number
+    Default: "70"
+  InstanceId3:
+    Description: Id instance.
+    Type: String
+    Default: "i-123h2v31v2"
+  AlarmName3:
+    Description: Alarm name.
+    Type: String
+    Default: "Transfor"
+  TargetCpuUtilization3:
+    Description: Porcentaje CPU alcanzado para realizar el escalamiento de contenedores, en blanco para no configurar
+    Type: Number
+    Default: "70"
+Conditions:
+  HashInstance1: !Not [ !Equals [ !Ref InstanceId1, '' ] ]
+  HashInstance2: !Not [ !Equals [ !Ref InstanceId2, '' ] ]
+  HashInstance3: !Not [ !Equals [ !Ref InstanceId3, '' ] ]
+Resources:
+  Alarm1Stack:
+    Type: AWS::CloudFormation::Stack
+    Condition: HashInstance1
+    Properties:
+      TemplateURL: ../lib/templates/cloudwatch/alarm.yaml
+      Parameters:
+        StackNumber: !Ref StackNumber
+        EnvironmentStack: !ImportValue
+          'Fn::Sub': '${MasterBaseStack}-EnvironmentStack'
+        AlarmsTopicStack: !ImportValue
+          'Fn::Sub': '${MasterSharedStack}-AlarmsTopicStack'
+        InstanceId: !Ref InstanceId1
+        AlarmName: !Ref AlarmName1
+        TargetCpuUtilization: !Ref TargetCpuUtilization1
+  Alarm2Stack:
+    Type: AWS::CloudFormation::Stack
+    Condition: HashInstance2
+    Properties:
+      TemplateURL: ../lib/templates/cloudwatch/alarm.yaml
+      Parameters:
+        StackNumber: !Ref StackNumber
+        EnvironmentStack: !ImportValue
+          'Fn::Sub': '${MasterBaseStack}-EnvironmentStack'
+        AlarmsTopicStack: !ImportValue
+          'Fn::Sub': '${MasterSharedStack}-AlarmsTopicStack'
+        InstanceId: !Ref InstanceId2
+        AlarmName: !Ref AlarmName2
+        TargetCpuUtilization: !Ref TargetCpuUtilization2
+  Alarm3Stack:
+    Type: AWS::CloudFormation::Stack
+    Condition: HashInstance3
+    Properties:
+      TemplateURL: ../lib/templates/cloudwatch/alarm.yaml
+      Parameters:
+        StackNumber: !Ref StackNumber
+        EnvironmentStack: !ImportValue
+          'Fn::Sub': '${MasterBaseStack}-EnvironmentStack'
+        AlarmsTopicStack: !ImportValue
+          'Fn::Sub': '${MasterSharedStack}-AlarmsTopicStack'
+        InstanceId: !Ref InstanceId3
+        AlarmName: !Ref AlarmName3
+        TargetCpuUtilization: !Ref TargetCpuUtilization3

@@ -1,0 +1,190 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Crear un plan de backup automatico con parametros"
+Metadata:
+  Version: 1.0
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Stack dependientes"
+        Parameters:
+          - StackNumber
+          - EnvironmentStack
+          - KmsStack
+      - Label:
+          default: "Opciones iniciales de backup"
+        Parameters:
+          - BackupPlanName
+          - BackupVaultName
+          - BackupSelectionName
+          - BackupTag
+      - Label:
+          default: "Configurar reglas de backup"
+        Parameters:
+          - RuleName1
+          - BackupFrecuency1
+          - MoveToColdStorageAfterDays1
+          - RuleName2
+          - BackupFrecuency2
+          - MoveToColdStorageAfterDays2
+          - RuleName3
+          - BackupFrecuency3
+          - MoveToColdStorageAfterDays3
+      - Label:
+          default: "Creacion de rol de backup"
+        Parameters:
+          - BackupRoleName
+Parameters:
+  StackNumber:
+    Description: "Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>"
+    Type: String
+    Default: "00"
+  EnvironmentStack:
+    Description: Stack name of base stack.
+    Type: String
+    Default: "LPSTV-0001-DVSC-SCP-ST-00-MASTER-BASE"
+  KmsStack:
+    Description: Stack name of base stack.
+    Type: String
+    Default: "LPSTV-0001-DVSC-SCP-ST-00-MASTER-BASE"
+  BackupPlanName:
+    Type: String
+    Description: "Asigne un nombre al plan de copia de seguridad"
+    Default: "aws-new-backup-plan"
+  BackupVaultName:
+    Type: String
+    Description: "Especifica un almacen de copia de seguridad"
+    Default: "aws-new-backup-vault"
+  BackupSelectionName:
+    Type: String
+    Description: "Especifica un objeto para el plan de copia de seguridad"
+    Default: "aws-new-backup-selection"
+  BackupTagKey:
+    Type: String
+    Description: "Especifique un nombre para la etiqueta backup"
+    Default: "daily"
+  BackupTagValue:
+    Type: String
+    Description: "Especifique un valor para la etiqueta backup"
+    Default: "daily"
+  RuleName1:
+    Type: String
+    Description: "Asigne un nombre de regla de backup"
+    Default: "TestRule1"
+  BackupFrecuency1:
+    Type: String
+    Description: "Utilice una expresion cron para programar la copia de seguridad"
+    Default: "cron(0 0 ? * 1 *)"
+  MoveToColdStorageAfterDays1:
+    Type: Number
+    Description: "Especifique el numero de dias para transferir la copia de seguridad al almacenamiento en frío"
+    Default: 120
+  DeleteAfterDays1:
+    Type: Number
+    Description: "Especifique la cantidad de días para eliminar los backups"
+    Default: 90
+  RuleName2:
+    Type: String
+    Description: "Asigne un nombre de regla de backup"
+    Default: "TestRule2"
+  BackupFrecuency2:
+    Type: String
+    Description: "Utilice una expresion cron para programar la copia de seguridad"
+    Default: "cron(0 5 ? * SUN *)"
+  MoveToColdStorageAfterDays2:
+    Type: Number
+    Description: "Especifique el numero de dias para transferir la copia de seguridad al almacenamiento en frío"
+    Default: 120
+  RuleName3:
+    Type: String
+    Description: "Asigne un nombre de regla de backup"
+    Default: "TestRule3"
+  BackupFrecuency3:
+    Type: String
+    Description: "Utilice una expresion cron para programar la copia de seguridad"
+    Default: "cron(0 5 1 * ? *)"
+  MoveToColdStorageAfterDays3:
+    Type: Number
+    Description: "Especifique el numero de dias para transferir la copia de seguridad al almacenamiento en frío"
+    Default: 120
+  BackupRoleName:
+    Type: String
+    Description: "Asigne un nombre al rol de copia de seguridad"
+    Default: "aws-new-backup-role"
+Resources:
+  BasicBackupVault:
+    Type: "AWS::Backup::BackupVault"
+    Properties:
+      BackupVaultName:
+        Fn::Sub:
+          - "${PREFIX}-BKP-${StackNumber}-VAULT-${BackupVaultName}"
+          - PREFIX: !ImportValue
+              "Fn::Sub": "${EnvironmentStack}-PrefixResourceName"
+      EncryptionKeyArn: !ImportValue
+        "Fn::Sub": "${KmsStack}-KeyArn"
+  BasicBackupPlan:
+    Type: "AWS::Backup::BackupPlan"
+    Properties:
+      BackupPlan:
+        BackupPlanName:
+          Fn::Sub:
+            - "${PREFIX}-BKP-${StackNumber}-PLAN-${BackupPlanName}"
+            - PREFIX: !ImportValue
+                "Fn::Sub": "${EnvironmentStack}-PrefixResourceName"
+        BackupPlanRule:
+          - RuleName: 
+              Fn::Sub:
+                - "${PREFIX}-BKP-${StackNumber}-RULE-${RuleName1}"
+                - PREFIX: !ImportValue
+                    "Fn::Sub": "${EnvironmentStack}-PrefixResourceName"
+            TargetBackupVault: !Ref BasicBackupVault
+            ScheduleExpression: !Ref BackupFrecuency1
+            Lifecycle:
+              # MoveToColdStorageAfterDays: !If !Ref MoveToColdStorageAfterDays1
+              DeleteAfterDays: !Ref DeleteAfterDays1
+          # - RuleName: !Ref RuleName2
+          #   TargetBackupVault: !Ref BasicBackupVault
+          #   ScheduleExpression: !Ref BackupFrecuency2
+          #   Lifecycle:
+          #     MoveToColdStorageAfterDays: !Ref MoveToColdStorageAfterDays2
+          # - RuleName: !Ref RuleName3
+          #   TargetBackupVault: !Ref BasicBackupVault
+          #   ScheduleExpression: !Ref BackupFrecuency3
+          #   Lifecycle:
+          #     MoveToColdStorageAfterDays: !Ref MoveToColdStorageAfterDays3
+    DependsOn: BasicBackupVault
+  BackupRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName:
+        Fn::Sub:
+          - "${PREFIX}-BKP-${StackNumber}-Role-${BackupRoleName}"
+          - PREFIX: !ImportValue
+              "Fn::Sub": "${EnvironmentStack}-PrefixResourceName"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "backup.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup
+        - arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores
+  BasicBackupSelection:
+    Type: "AWS::Backup::BackupSelection"
+    Properties:
+      BackupPlanId: !Ref BasicBackupPlan
+      BackupSelection:
+        SelectionName: 
+          Fn::Sub:
+            - "${PREFIX}-BKP-${StackNumber}-SELECTION-${BackupSelectionName}"
+            - PREFIX: !ImportValue
+                "Fn::Sub": "${EnvironmentStack}-PrefixResourceName" 
+        IamRoleArn: !GetAtt BackupRole.Arn
+        ListOfTags:
+          - ConditionType: "STRINGEQUALS"
+            ConditionKey: !Ref BackupTagKey
+            ConditionValue: !Ref BackupTagValue
+    DependsOn: BasicBackupPlan

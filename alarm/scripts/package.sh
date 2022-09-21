@@ -1,6 +1,6 @@
 #!/bin/bash
-TEMPLATE_FILE='../master-backup.yaml'
-PACKAGED_FILE='../output/master-backup.packaged.yaml'
+TEMPLATE_FILE='../master-alarm.yaml'
+PACKAGED_FILE='../output/master-alarm.packaged.yaml'
 
 WORK_DIR=$(pwd) || exit
 
@@ -14,7 +14,7 @@ mkdir -p ../output  || exit
 aws cloudformation package \
 --template-file $TEMPLATE_FILE \
 --s3-bucket "$BUCKET" \
---s3-prefix "$PREFIX/backup" \
+--s3-prefix "$PREFIX/alarm" \
 --output-template-file $PACKAGED_FILE
 
-aws s3 cp $PACKAGED_FILE s3://$BUCKET/$PREFIX/backup/master-backup.packaged.yaml
+aws s3 cp $PACKAGED_FILE s3://$BUCKET/$PREFIX/alarm/master-alarm.packaged.yaml

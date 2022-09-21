@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Crear un plan de backup automatico con parametros"
+Metadata:
+  Version: 1.0
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Stack dependientes"
+        Parameters:
+          - StackNumber
+          - EnvironmentStack
+          - AlarmsTopicStack
+      - Label:
+          default: "Parameter Alarm"
+        Parameters:
+          - InstanceId
+          - AlarmName
+          - TargetCpuUtilization
+Parameters:
+  StackNumber:
+    Description: "Use to avoid conflicts when deploy various instances of this instance with the same name; <prefix>-[00 | 01 | 02 | ...]-<name>"
+    Type: String
+    Default: "00"
+  EnvironmentStack:
+    Description: Stack name of base stack.
+    Type: String
+    Default: "LPSTV-0001-DVSC-SCP-ST-00-MASTER-BASE"
+  AlarmsTopicStack:
+    Description: Stack name of base stack.
+    Type: String
+    Default: "LPSTV-0001-DVSC-SCP-ST-00-MASTER-BASE"
+  InstanceId:
+    Description: Id instance.
+    Type: String
+    Default: "i-123h2v31v2"
+  AlarmName:
+    Description: Alarm name.
+    Type: String
+    Default: "Transfor"
+  TargetCpuUtilization:
+    Description: Porcentaje CPU alcanzado para realizar el escalamiento de contenedores, en blanco para no configurar
+    Type: Number
+    Default: "70"
+Resources:
+  ServiceCPUAlarmUpper:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName:
+        Fn::Sub:
+          - "${PREFIX}-ALARM-UPPER-${StackNumber}-${METRIC}-${AlarmName}"
+          - PREFIX: !ImportValue
+              "Fn::Sub": "${EnvironmentStack}-PrefixResourceName"
+            METRIC: CPUUtilization
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold:
+        Ref: TargetCpuUtilization
+      AlarmActions:
+        - Fn::ImportValue:
+            Fn::Sub: ${AlarmsTopicStack}-TopicARN
+      # OKActions:
+      #   - Ref: AutoScalingPolicyUpperCPU
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+      ComparisonOperator: GreaterThanOrEqualToThreshold

@@ -1,8 +1,8 @@
 ## TRANSFORS DEV
-$BUCKET="transfors-template-arq"
+$BUCKET="transfors-template-arq" #Cambiar por región, concatenar -us-west-2 para Oregón
 $PREFIX="transfors/prd"
 $AWS_PROFILE="default"
-$AWS_REGION="us-east-1"
+$AWS_REGION="us-east-1" #Cambiar por región us-east-1 para Virginia y us-west-2 para Oregón
 
 $COID="TNFR"
 $ASSETID="0001"
@@ -12,7 +12,7 @@ $ENV="PRD"
 
 #PARAMETROS VPC
 $VPC_TENANCY="default"
-$AVAILABILITY_ZONE="us-west-2a,us-west-2b"
+$AVAILABILITY_ZONE="us-east-1a,us-east-1b" #Cambiar por región utilizat us-west-2 para Oregón
 $VPC_CIDR="10.10.0.0/16"
 $PUBLIC_SUBNET_1_CIDR="10.10.1.0/24"
 $PUBLIC_SUBNET_2_CIDR="10.10.4.0/24"
@@ -29,28 +29,25 @@ $NAT_ALLOCATION_ID_EIP="" #Esto debe salir de un template que crea EIP
 
 
 #ROUTE53
-$HOSTED_ZONE_NAME="transfors.co"
+$HOSTED_ZONE_NAME="transfors.co" #Cambia por balanceador a desplegar (transfors.co, transforsweb.co, transforips.com)
 $HOSTED_ZONE_ID=""
 $ENABLE_LOGIN="NO"
 $LOG_RETENTION_DAYS="30"
 
-#ELB
-$TYPE_ELB="application"
-$API_DOMAIN="api.transfors.co"
+#ELB1
+$TYPE_ELB1="application"
+$API_DOMAIN1="api.transfors.co"
+$CERTIFICATE1="arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8"
 
-#PARAMETROS RDS
-$DB_USERNAME="trannsfor_bd"
-$BD_PASSWORD="EKNR?-h8QMPQ+J+8h9epVR%^aY5AepGT"
-$CLUSTER_ACTION="CREATE"
-$DATABASE_NAME="moradodb"
-$ENGINE="13.3"
-$CLUSTER_DELETION_PROTECTION="DISABLED"
-$CLUSTER_BACKUP_RETENTION_PERIOD="1"
-$CLUSTER_INSTANCE_CLASS="db.t3.micro"
-$CLUSTER_SNAPSHOT_ARN=""
-$DB_SUBDOMAIN_NAME_WITHOUT_DOT="db-dev"
-$USE_ENVIROMENT_SUFIX="NO"
-$ADD_DNS_RECORDS="NO"
+#ELB2
+$TYPE_ELB2="application"
+$API_DOMAIN2="www.transforsweb.co"
+$CERTIFICATE2="arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8"
+
+#ELB3
+$TYPE_ELB3="application"
+$API_DOMAIN3="www.transforips.com"
+$CERTIFICATE3="arn:aws:acm:us-east-1:573128502780:certificate/2a0282cc-6f0c-4d6f-a707-111ddc1d4402"
 
 ###PARAMETROS STACK MASTER WAF###
 $WAF_APP_NAME="API"
@@ -71,6 +68,34 @@ $MAX_EXPECTED_HEADER_CSRF=37
 $REQUEST_TRESHOLD=200
 $WAF_BLOCK_PERIOD=5
 
+#BACKUP
+$BACKUP_PLAN_NAME="Ec2"
+$BACKUP_VAULT_NAME="AMIsEc2"
+$BACKUP_SELECTION_NAME="InstanceEc2"
+$BACKUP_TAGKEY="BACKUP"
+$BACKUP_TAGVALUE="YES"
+$RULE_NAME_1="EverySunday"
+$BACKUP_FRECUENCY_1="cron(0 0 ? * 1 *)"
+$MOVE_TO_COLD_STORAGE_AFTER_DAYS_1=0
+$DELETE_AFTER_DAY=90
+$RULE_NAME_2=""
+$BACKUP_FRECUENCY_2=""
+$MOVE_TO_COLD_STORAGE_AFTER_DAYS_2=0
+$RULE_NAME_3=""
+$BACKUP_FRECUENCY_3=""
+$MOVE_TO_COLD_STORAGE_AFTER_DAYS_3=0
+$BACKUP_ROLE_NAME="bkpEc2-$AWS_REGION"
+
+#ALARMS
+$INSTANCE_ID_1="i-03c5d39c44b2088bb"
+$ALARM_NAME_1="Transfor-1"
+$TARGET_CPU_UTILIZATION_1=80
+$INSTANCE_ID_2="i-05fefdb5c4c9d4c3f"
+$ALARM_NAME_2="Transfor-4"
+$TARGET_CPU_UTILIZATION_2=80
+$INSTANCE_ID_3="i-00f06a7a652dced34"
+$ALARM_NAME_3="Transfor-3"
+$TARGET_CPU_UTILIZATION_3=80
 
 $SUPPORT_EMAIL="awsadmin@transfors.com.co"
 $ALARMS_EMAIL="awsadmin@transfors.com.co"
@@ -78,8 +103,5 @@ $ALARMS_EMAIL="awsadmin@transfors.com.co"
 $HOSTED_ZONE=""
 # $HOSTED_ZONE="Z05944852T4H5WX5BHJ6K"
 # $CERTIFICATE=""
-$CERTIFICATE="arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8"
-$CERTIFICATE2="arn:aws:acm:us-east-1:573128502780:certificate/d56e45af-c886-4021-9677-5ffb2152a8b8"
-$CERTIFICATE3="arn:aws:acm:us-east-1:573128502780:certificate/2a0282cc-6f0c-4d6f-a707-111ddc1d4402"
 $AUTH_DOMAIN=""
 # $AUTH_DOMAIN="auth.lapositivapruebas.applying.pe"
